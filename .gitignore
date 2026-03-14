@@ -2,6 +2,7 @@
 *.npy
 *.nc
 *.asc
+!Spectra/group1_all/*.asc
 
 # Model checkpoints
 *.pt
