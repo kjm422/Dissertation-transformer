@@ -1,0 +1,44 @@
+# Data files (too large for git - regenerate with scripts)
+*.npy
+*.nc
+*.asc
+
+# Model checkpoints
+*.pt
+
+# LaTeX build artifacts
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+
+# Python
+__pycache__/
+*.pyc
+*.pkl
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# IDE / tool config
+.claude/
+
+# Large binaries
+*.pdf
+*.docx
+*.png
+
+# Data directories
+Data/
+PLoM_old/
+
+# CSV data files (but keep small config CSVs if needed)
+kelli_scripts/*knockoff*.csv
+kelli_scripts/*selected_features*.csv
+
+# Attention output data
+kelli_scripts/attn_outputs/
