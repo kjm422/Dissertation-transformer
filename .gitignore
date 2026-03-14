@@ -48,3 +48,7 @@ kelli_scripts/*selected_features*.csv
 
 # Attention output data
 kelli_scripts/attn_outputs/
+
+# Embedded git repos (separate projects)
+kelli_scripts/PLoM-1/
+kelli_scripts/PLoM_1hpc/
