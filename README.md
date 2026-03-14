@@ -18,6 +18,16 @@ Transformer-based mineral classification from EMIT L1B TOA reflectance, bypassin
 |------|-------------|
 | `Spectra/group1_all/*.asc` | 93 USGS splib06 reference spectra for EMIT Group 1 mineral classes (raw ASCII, wavelength in µm) |
 
+### External Data (not in repo)
+
+EMIT NetCDF files are stored locally and not tracked by git due to size.
+
+| Path | Contents |
+|------|----------|
+| `/Volumes/big24Tb/USC/Research/Dissertation/Data/Africa_MiddleEast/L1B/` | EMIT L1B radiance and observation files (.nc) |
+| `/Volumes/big24Tb/USC/Research/Dissertation/Data/Africa_MiddleEast/L2B/` | EMIT L2B mineral ID products (.nc) |
+| `/Volumes/big24Tb/USC/Research/Dissertation/Data/Africa_MiddleEast/TOArefl_pca_output/band/` | TOA reflectance data |
+
 ### Upcoming
 
 Additional scripts for the transformer encoder, training pipeline, LUSI augmentation, attention analysis, and full-image inference will be added as they are finalized.
