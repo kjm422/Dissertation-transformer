@@ -1,0 +1,23 @@
+# Dissertation: Physics-Informed Transformer for Hyperspectral Mineral Classification
+
+Transformer-based mineral classification from EMIT L1B TOA reflectance, bypassing radiative transfer model (RTM) atmospheric correction.
+
+## Repository Structure
+
+### Scripts (in suggested order of use)
+
+| # | Script | Purpose |
+|---|--------|---------|
+| 1 | `kelli_scripts/Explore_files_EMIT.ipynb` | Explore EMIT NetCDF file structure (L1B radiance, L1B obs, L2A reflectance, L2B mineral ID). Includes `ncdump`-style inspection, USGS spectra convolution examples, and extraction of TOA reflectance, mineral IDs, and band-depth QoI from L2B products. Start here to understand the data. |
+| 2 | `Spectra/group1_all/download_group1.sh` | Download all 93 USGS Spectral Library 06 Group 1 reference spectra (.asc) from the clarkvision mirror. Covers the full range of Group 1 minerals: iron oxides, pyroxenes, olivines, feldspars, sulfides, copper minerals, coatings, vegetation proxies, and confusers. |
+| 3 | `kelli_scripts/EMITgroup1_conversion.py` | Convolve USGS ASCII spectra to EMIT's 285 bands via Gaussian bandpass, mask water vapor absorption bands (~1.4 µm, ~1.9 µm) and noisy edge (>2450 nm), and concatenate all Group 1 spectra into a matrix ready for PCA / Tetracorder pipeline ingestion. |
+
+### Data
+
+| Path | Description |
+|------|-------------|
+| `Spectra/group1_all/*.asc` | 93 USGS splib06 reference spectra for EMIT Group 1 mineral classes (raw ASCII, wavelength in µm) |
+
+### Upcoming
+
+Additional scripts for the transformer encoder, training pipeline, LUSI augmentation, attention analysis, and full-image inference will be added as they are finalized.
