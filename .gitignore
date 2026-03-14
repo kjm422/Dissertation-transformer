@@ -3,6 +3,11 @@
 *.nc
 *.asc
 !Spectra/group1_all/*.asc
+!Spectra/group1_all/ALL_group1_spectra_masked.npy
+!Spectra/group1_all/ALL_group1_spectra_full.npy
+!Spectra/group1_all/water_vapor_mask_285.npy
+!Spectra/group1_all/emit_wavelength_centers_masked_nm.npy
+!Spectra/group1_all/ALL_group1_spectra.json
 
 # Model checkpoints
 *.pt
