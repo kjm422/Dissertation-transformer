@@ -11,6 +11,7 @@
 
 # Model checkpoints
 *.pt
+!Data/attn_outputs_PCA4_diffwt1_cont/ckpt_best_qoiattn_nozeros.pt
 
 # LaTeX build artifacts
 *.aux
@@ -39,7 +40,8 @@ __pycache__/
 *.png
 
 # Data directories
-Data/
+Data/*
+!Data/attn_outputs_*/
 PLoM_old/
 
 # CSV data files (but keep small config CSVs if needed)
