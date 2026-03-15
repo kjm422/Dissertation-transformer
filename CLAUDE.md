@@ -71,11 +71,21 @@ Best spectroscopic validation of any configuration:
 
 | Config | Heads | Ref spectra | WV mask | Top-1 | Top-3 | Time (min) |
 |--------|-------|-------------|---------|-------|-------|------------|
-| PCA + derivatives | 4 | 93 | Yes | 0.804 | 0.966 | 141 |
+| Transformer only + derivatives | 4 | — | No | 0.791 | 0.962 | — |
 | LUSI + derivatives | 4 | — | No | 0.787 | 0.961 | ~141 |
+| PCA + derivatives | 4 | 93 | Yes | 0.804 | 0.966 | 141 |
 | PCA + derivatives | 8 | 23 | No | 0.812 | 0.968 | — |
 | PCA + derivatives | 8 | 93 | Yes | 0.806 | 0.966 | 127 |
 | PCA + LUSI + derivatives | — | — | — | TBD | TBD | TBD |
+
+## Transformer-Only Baseline Analysis
+Pure transformer (no PCA, no LUSI, no wv mask): top1=0.791, top3=0.962
+- Head 0: 1119 nm single-band NIR (wasted, identical for hematite/goethite)
+- Head 1: 552/567/589 nm Fe3+ charge transfer (spectroscopically valid, discovered without physics)
+- Head 2: 738/820/992/1216 nm broad NIR (wider coverage than any PCA head)
+- Head 3: 850/1074/1260 nm Fe crystal field — **only head across all configs with significant Spearman r=0.323 (p<0.001)**
+- Spearman works for diffuse attention (transformer-only); peak coincidence works for sharp attention (PCA)
+- Model naturally discovers Fe3+ features regardless of initialization — PCA sharpens but doesn't create them
 
 ## Output Folders Convention
 Training outputs are moved to `Data/attn_outputs_{config}/` e.g.:
