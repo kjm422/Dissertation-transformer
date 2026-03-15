@@ -12,6 +12,7 @@ Transformer-based mineral classification from EMIT L1B TOA reflectance, bypassin
 | 2 | `Spectra/group1_all/download_group1.sh` | Download all 93 USGS Spectral Library 06 Group 1 reference spectra (.asc) from the clarkvision mirror. Covers the full range of Group 1 minerals: iron oxides, pyroxenes, olivines, feldspars, sulfides, copper minerals, coatings, vegetation proxies, and confusers. |
 | 3 | `kelli_scripts/EMITgroup1_conversion.py` | Convolve USGS ASCII spectra to EMIT's 285 bands via Gaussian bandpass, mask water vapor absorption bands (~1.4 µm, ~1.9 µm) and noisy edge (>2450 nm), and concatenate all Group 1 spectra into a matrix ready for PCA / Tetracorder pipeline ingestion. |
 | 4 | `kelli_scripts/spectral_trans_withqoi_attentionr14_pcalusi.py` | Training script for the physics-informed transformer. Supports PCA attention priors, LUSI consistency regularization, spectral derivatives, water vapor masking, and per-head attention export. Vectorized einsum attention (30% faster than r13). |
+| 5 | `kelli_scripts/Spectra_interrogationr2.ipynb` | Post-training analysis notebook. Attention-vs-diagnostic-band validation, per-head attention plots, prior evolution visualization, peak coincidence tests, Spearman rank correlation, training curve comparisons across ablation configs (4-head, 8-head, PCA, LUSI, 100k subsets), confusion matrix analysis by mineral abundance bin, random forest baseline comparison, full-image inference performance reports, knockoff feature selection analysis, and PLoM data augmentation evaluation. |
 
 ### Data
 
@@ -50,7 +51,21 @@ Experiment results are stored in `Data/attn_outputs_{config}/` folders:
 | `Data/attn_outputs_PCA4_diffwt1_cont/` | PCA 4-head + derivatives + continuum | 0.804 | 0.966 |
 | `Data/attn_outputs_Lusi4_diffwt1/` | LUSI-only 4-head + derivatives | 0.787 | 0.961 |
 
-Each folder contains: best checkpoint (.pt), training history, transparency reports, and per-head attention CSVs.
+Each folder contains the following outputs from `spectral_trans_withqoi_attentionr14_pcalusi.py`:
+
+| File | Description |
+|------|-------------|
+| `ckpt_best_qoiattn_nozeros.pt` | Best model checkpoint (backbone + head weights, normalization stats, hyperparameters). Saved at the epoch with highest val top-1 accuracy. |
+| `spectral_stage1_qoiattn_nozeros.pt` | Final epoch model checkpoint (backbone weights + normalization stats). Always saved regardless of best accuracy. |
+| `training_history.csv` | Per-epoch training metrics: total loss, CE loss, LUSI loss, val top-1 accuracy, val top-3 accuracy. |
+| `training_curves.png` | Loss and accuracy plots over training epochs. |
+| `transparency_report_metrics.csv` | Per-class precision, recall, F1-score, and support from the best checkpoint evaluated on the validation set. |
+| `transparency_report_confusion_matrix.csv` | Full 95×95 confusion matrix from the best checkpoint on validation set. |
+| `prior_evolution.npy` | Attention bias values per epoch, shape (epochs+1, heads, bands). Tracks how PCA priors drift during training. |
+| `band_attention_global.csv` | Head-averaged attention weights across all validation pixels (1×285). |
+| `band_attention_by_class.csv` | Head-averaged attention weights per mineral class (95×285). |
+| `band_attention_global_head{0-H}.csv` | Per-head global attention weights (1×285 each). Shows what each individual head attends to. |
+| `band_attention_by_class_head{0-H}.csv` | Per-head per-class attention weights (95×285 each). Key for validating spectroscopic interpretability per head. |
 
 ### Upcoming
 
