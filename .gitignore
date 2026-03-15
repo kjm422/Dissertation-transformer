@@ -11,7 +11,7 @@
 
 # Model checkpoints
 *.pt
-!Data/attn_outputs_PCA4_diffwt1_cont/ckpt_best_qoiattn_nozeros.pt
+!Data/attn_outputs_*/ckpt_best_qoiattn_nozeros.pt
 
 # LaTeX build artifacts
 *.aux

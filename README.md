@@ -11,6 +11,7 @@ Transformer-based mineral classification from EMIT L1B TOA reflectance, bypassin
 | 1 | `kelli_scripts/Explore_files_EMIT.ipynb` | Explore EMIT NetCDF file structure (L1B radiance, L1B obs, L2A reflectance, L2B mineral ID). Includes `ncdump`-style inspection, USGS spectra convolution examples, and extraction of TOA reflectance, mineral IDs, and band-depth QoI from L2B products. Start here to understand the data. |
 | 2 | `Spectra/group1_all/download_group1.sh` | Download all 93 USGS Spectral Library 06 Group 1 reference spectra (.asc) from the clarkvision mirror. Covers the full range of Group 1 minerals: iron oxides, pyroxenes, olivines, feldspars, sulfides, copper minerals, coatings, vegetation proxies, and confusers. |
 | 3 | `kelli_scripts/EMITgroup1_conversion.py` | Convolve USGS ASCII spectra to EMIT's 285 bands via Gaussian bandpass, mask water vapor absorption bands (~1.4 µm, ~1.9 µm) and noisy edge (>2450 nm), and concatenate all Group 1 spectra into a matrix ready for PCA / Tetracorder pipeline ingestion. |
+| 4 | `kelli_scripts/spectral_trans_withqoi_attentionr14_pcalusi.py` | Training script for the physics-informed transformer. Supports PCA attention priors, LUSI consistency regularization, spectral derivatives, water vapor masking, and per-head attention export. Vectorized einsum attention (30% faster than r13). |
 
 ### Data
 
@@ -40,6 +41,17 @@ EMIT NetCDF files are stored locally and not tracked by git due to size.
 | `/Volumes/big24Tb/USC/Research/Dissertation/Data/Africa_MiddleEast/L2B/` | EMIT L2B mineral ID products (.nc) |
 | `/Volumes/big24Tb/USC/Research/Dissertation/Data/Africa_MiddleEast/TOArefl_pca_output/band/` | TOA reflectance data |
 
+### Training Outputs
+
+Experiment results are stored in `Data/attn_outputs_{config}/` folders:
+
+| Folder | Config | Top-1 | Top-3 |
+|--------|--------|-------|-------|
+| `Data/attn_outputs_PCA4_diffwt1_cont/` | PCA 4-head + derivatives + continuum | 0.804 | 0.966 |
+| `Data/attn_outputs_Lusi4_diffwt1/` | LUSI-only 4-head + derivatives | 0.787 | 0.961 |
+
+Each folder contains: best checkpoint (.pt), training history, transparency reports, and per-head attention CSVs.
+
 ### Upcoming
 
-Additional scripts for the transformer encoder, training pipeline, LUSI augmentation, attention analysis, and full-image inference will be added as they are finalized.
+Additional experiments (PCA+LUSI combined, 8-head) and full-image inference scripts will be added as they are finalized.
