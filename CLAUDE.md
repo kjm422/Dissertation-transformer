@@ -53,21 +53,35 @@ Key comparison (PCA vs LUSI):
 - PCA priors produce more focused, spectroscopically complete feature sets (860 nm crystal field in PCA Head 3 vs diffuse NIR in LUSI)
 - Both configurations waste ~1 head on non-discriminative features
 - **Conclusion: physics priors don't change what the model CAN learn, but they change what it DOES learn**
-- 4 heads is insufficient — 1 head wasted in every configuration. 8-head experiment (4 PCA + 4 free) is next priority.
+- 4 heads is insufficient — 1 head wasted in every configuration
+- 8-head + wv mask is the recommended configuration: most spectroscopically interpretable with top accuracy
+
+## 8-Head PCA + Water Vapor Mask Analysis
+Best spectroscopic validation of any configuration:
+- **Head 2** (PCA): top-5 peaks at 544, 537, 530, 470, 873 nm — matches hematite diagnostic at ~530/860 nm and goethite at ~480 nm
+- **Head 3** (PCA): 873 nm Fe crystal field + 1514/1208 nm NIR
+- **Heads 0, 1** (PCA): SWIR features (2004, 1588 nm) — mineral overtones, not iron-specific
+- **Heads 4–7** (random): various SWIR/NIR data-driven patterns
+- Head-averaged attention peaks at 925 and 470 nm — genuine iron oxide features, not atmospheric artifacts
+- Prior evolution: without mask 6/8 heads suppress H₂O; with mask 3/8 heads drift at Fe³⁺ wavelengths
+- WV mask reduces PCA head drift (priors start closer to optimal): PC1 drift 0.81→0.57, PC2 1.01→0.65
+- 8-head einsum: 127 min (faster than 4-head 141 min due to better GPU utilization)
 
 ## Ablation Results Summary
 
-| Config | Top-1 | Top-3 | Time (min) |
-|--------|-------|-------|------------|
-| PCA + derivatives (r14) | 0.804 | 0.966 | 141 |
-| LUSI + derivatives (r14) | 0.787 | 0.961 | ~141 |
-| PCA + LUSI + derivatives | TBD | TBD | TBD |
-| 8-head PCA + derivatives | TBD | TBD | TBD |
+| Config | Heads | Ref spectra | WV mask | Top-1 | Top-3 | Time (min) |
+|--------|-------|-------------|---------|-------|-------|------------|
+| PCA + derivatives | 4 | 93 | Yes | 0.804 | 0.966 | 141 |
+| LUSI + derivatives | 4 | — | No | 0.787 | 0.961 | ~141 |
+| PCA + derivatives | 8 | 23 | No | 0.812 | 0.968 | — |
+| PCA + derivatives | 8 | 93 | Yes | 0.806 | 0.966 | 127 |
+| PCA + LUSI + derivatives | — | — | — | TBD | TBD | TBD |
 
 ## Output Folders Convention
 Training outputs are moved to `Data/attn_outputs_{config}/` e.g.:
 - `Data/attn_outputs_PCA4_diffwt1_cont/` — r14 PCA 4-head, derivatives, continuum removal
 - `Data/attn_outputs_Lusi4_diffwt1/` — r14 LUSI-only 4-head, derivatives
+- `Data/attn_outputs_PCA8_diffwt1_cont/` — r14 PCA 8-head, derivatives, continuum, wv mask
 
 ## Git
 - Repo: https://github.com/kjm422/Dissertation-transformer
