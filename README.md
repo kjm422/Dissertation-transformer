@@ -52,6 +52,7 @@ Experiment results are stored in `Data/attn_outputs_{config}/` folders:
 | `Data/attn_outputs_Lusi4_diffwt1/` | LUSI-only 4-head + derivatives | 0.787 | 0.961 |
 | `Data/attn_outputs_PCA8_diffwt1_cont/` | PCA 8-head + derivatives + continuum + wv mask | 0.806 | 0.966 |
 | `Data/attn_outputs_Trans4_diff/` | Transformer only 4-head + derivatives (baseline) | 0.791 | 0.962 |
+| `Data/attn_outputs_PCALUSI8_diffcont_wts1/` | PCA + LUSI 8-head + derivatives + continuum + wv mask | 0.805 | 0.965 |
 
 Each folder contains the following outputs from `spectral_trans_withqoi_attentionr14_pcalusi.py`:
 

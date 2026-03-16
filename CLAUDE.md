@@ -76,7 +76,7 @@ Best spectroscopic validation of any configuration:
 | PCA + derivatives | 4 | 93 | Yes | 0.804 | 0.966 | 141 |
 | PCA + derivatives | 8 | 23 | No | 0.812 | 0.968 | — |
 | PCA + derivatives | 8 | 93 | Yes | 0.806 | 0.966 | 127 |
-| PCA + LUSI + derivatives | — | — | — | TBD | TBD | TBD |
+| PCA + LUSI + derivatives | 8 | 93 | Yes | 0.805 | 0.965 | ~127 |
 
 ## Transformer-Only Baseline Analysis
 Pure transformer (no PCA, no LUSI, no wv mask): top1=0.791, top3=0.962
@@ -92,6 +92,15 @@ Training outputs are moved to `Data/attn_outputs_{config}/` e.g.:
 - `Data/attn_outputs_PCA4_diffwt1_cont/` — r14 PCA 4-head, derivatives, continuum removal
 - `Data/attn_outputs_Lusi4_diffwt1/` — r14 LUSI-only 4-head, derivatives
 - `Data/attn_outputs_PCA8_diffwt1_cont/` — r14 PCA 8-head, derivatives, continuum, wv mask
+- `Data/attn_outputs_Trans4_diff/` — r14 transformer-only 4-head baseline, derivatives
+- `Data/attn_outputs_PCALUSI8_diffcont_wts1/` — r14 PCA+LUSI 8-head, derivatives, continuum, wv mask, lusi_weight=1
+
+## LUSI Findings
+LUSI does not improve accuracy in any configuration tested:
+- 4-head LUSI-only (0.787) underperforms transformer baseline (0.791)
+- 8-head PCA+LUSI (0.805) matches PCA-only (0.806) within noise
+- LUSI loss is small (~0.03) at convergence — model already achieves brightness/slope invariance through training
+- Conclusion: explicit invariance regularization is redundant at ~1M pixel data scale
 
 ## Git
 - Repo: https://github.com/kjm422/Dissertation-transformer
