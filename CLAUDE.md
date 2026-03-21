@@ -95,6 +95,14 @@ Training outputs are moved to `Data/attn_outputs_{config}/` e.g.:
 - `Data/attn_outputs_Trans4_diff/` — r14 transformer-only 4-head baseline, derivatives
 - `Data/attn_outputs_PCALUSI8_diffcont_wts1/` — r14 PCA+LUSI 8-head, derivatives, continuum, wv mask, lusi_weight=1
 
+## Documentation
+Spectra_interrogationr2.ipynb contains three mathematical write-ups in markdown cells:
+1. **General Transformer Architecture** — Sections 1-8: preprocessing, tokenization, cross-attention backbone, classification head, optimization, monitoring, outputs
+2. **Physics-Informed Priors** — PCA on USGS ref spectra, continuum removal, hybrid head allocation, freeze schedule, water vapor masking, prior evolution tracking
+3. **LUSI Consistency Regularization** — Vapnik connection, scale/slope predicates, KL divergence loss, empirical findings
+
+Notation conventions: $\mathbf{W}_p$ for pixel reflectance, $\hat{w}$ for normalized, $Q_1=95$ for mineral classes, $\tau$ for softmax temperature (not $T$, which is the physical transformation)
+
 ## LUSI Findings
 LUSI does not improve accuracy in any configuration tested:
 - 4-head LUSI-only (0.787) underperforms transformer baseline (0.791)
