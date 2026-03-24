@@ -69,30 +69,57 @@ Best spectroscopic validation of any configuration:
 
 ## Ablation Results Summary
 
-| Config | Heads | Ref spectra | WV mask | Top-1 | Top-3 | Time (min) |
-|--------|-------|-------------|---------|-------|-------|------------|
-| Transformer only + derivatives | 4 | — | No | 0.791 | 0.962 | — |
-| LUSI + derivatives | 4 | — | No | 0.787 | 0.961 | ~141 |
-| PCA + derivatives | 4 | 93 | Yes | 0.804 | 0.966 | 141 |
-| PCA + derivatives | 8 | 23 | No | 0.812 | 0.968 | — |
-| PCA + derivatives | 8 | 93 | Yes | 0.806 | 0.966 | 127 |
-| PCA + LUSI + derivatives | 8 | 93 | Yes | 0.805 | 0.965 | ~127 |
+| Config | Heads (PCA/Total) | Top-1 | Top-3 | Time (min) |
+|--------|-------------------|-------|-------|------------|
+| Transformer only | 4 | 0.791 | 0.962 | 117 |
+| **Transformer only** | **8** | **0.813** | **0.968** | **136** |
+| PCA | 4/4 | 0.804 | 0.966 | 141 |
+| PCA | 4/8 | 0.806 | 0.966 | 127 |
+| PCA | 8/8 | 0.805 | 0.966 | 150 |
+| LUSI | 4 | 0.787 | 0.961 | 269 |
+| LUSI | 8 | 0.796 | 0.963 | 293 |
+| PCA+LUSI | 4/8 | 0.805 | 0.965 | 311 |
 
-## Transformer-Only Baseline Analysis
-Pure transformer (no PCA, no LUSI, no wv mask): top1=0.791, top3=0.962
-- Head 0: 1119 nm single-band NIR (wasted, identical for hematite/goethite)
+Best result: 8-head transformer-only (0.813) — no PCA, no LUSI, no wv mask needed.
+PCA ceiling: ~0.805-0.806 regardless of head count or seeding strategy.
+LUSI: hurts accuracy in every configuration and roughly doubles training time.
+
+## Transformer-Only 8-Head Analysis (best result)
+8-head transformer (no PCA, no LUSI): top1=0.813, top3=0.968, 136 min
+- Outperforms all PCA configurations (0.805-0.806) by discovering features in native TOA domain
+- Head 2: 477/515/544 nm Fe3+ charge transfer (same region as PCA, discovered independently)
+- Head 1: 835 nm near crystal field diagnostic (~860 nm)
+- Head 4: 955 nm near goethite diagnostic (~920 nm)
+- Head 7: 679 nm near Fe3+ diagnostic (~670 nm) — NOT found by any PCA configuration
+- head_sim=0.010 (lowest of any run — maximally diverse heads)
+- PCA priors constrain heads away from features the model would otherwise discover (679, 835 nm)
+
+## Transformer-Only 4-Head Analysis
+Pure transformer (no PCA, no LUSI, no wv mask): top1=0.791, top3=0.962, 117 min
 - Head 1: 552/567/589 nm Fe3+ charge transfer (spectroscopically valid, discovered without physics)
-- Head 2: 738/820/992/1216 nm broad NIR (wider coverage than any PCA head)
 - Head 3: 850/1074/1260 nm Fe crystal field — **only head across all configs with significant Spearman r=0.323 (p<0.001)**
 - Spearman works for diffuse attention (transformer-only); peak coincidence works for sharp attention (PCA)
 - Model naturally discovers Fe3+ features regardless of initialization — PCA sharpens but doesn't create them
 
+## No-Continuum PCA Finding
+PCA on raw reflectance (no continuum removal) at 4 heads achieves 0.810 — nearly matching 8-head transformer (0.813):
+- Eliminates representation mismatch (eigenvectors in reflectance space, not absorption depth space)
+- Rescues Head 0: no-continuum PC1 maps to VNIR Fe3+ (413/492/528 nm) instead of atmospheric proxy
+- All 4 heads attend to spectroscopically relevant regions — no wasted heads
+- Continuum removal was counterproductive: it discards albedo information useful for TOA classification
+- PCA ceiling at 0.805 only applies to continuum-removed PCA; raw reflectance PCA breaks through to 0.810
+
 ## Output Folders Convention
-Training outputs are moved to `Data/attn_outputs_{config}/` e.g.:
-- `Data/attn_outputs_PCA4_diffwt1_cont/` — r14 PCA 4-head, derivatives, continuum removal
-- `Data/attn_outputs_Lusi4_diffwt1/` — r14 LUSI-only 4-head, derivatives
-- `Data/attn_outputs_PCA8_diffwt1_cont/` — r14 PCA 8-head, derivatives, continuum, wv mask
-- `Data/attn_outputs_Trans4_diff/` — r14 transformer-only 4-head baseline, derivatives
+Training outputs are in `Data/attn_outputs_{config}/`:
+- `Data/attn_outputs_Trans4_diff/` — transformer-only 4H (0.791)
+- `Data/attn_outputs_Trans8_diff/` — transformer-only 8H (0.813)
+- `Data/attn_outputs_PCA4_diffwt1_cont/` — PCA 4/4H continuum (0.804)
+- `Data/attn_outputs_PCA4_diffwt1_nocont/` — PCA 4/4H no-continuum (0.810)
+- `Data/attn_outputs_PCA4_8_diffwt1_cont/` — PCA 4/8H continuum (0.806)
+- `Data/attn_outputs_PCA4_8_diffwt1_nocont/` — PCA 4/8H no-continuum (0.805)
+- `Data/attn_outputs_Lusi4_diffwt1/` — LUSI 4H (0.787)
+- `Data/attn_outputs_Lusi8_diffwt1/` — LUSI 8H (0.796)
+- `Data/attn_outputs_PCALUSI4_8_diffcont_wts1/` — PCA+LUSI 4/8H (0.805)
 - `Data/attn_outputs_PCALUSI8_diffcont_wts1/` — r14 PCA+LUSI 8-head, derivatives, continuum, wv mask, lusi_weight=1
 
 ## Documentation
