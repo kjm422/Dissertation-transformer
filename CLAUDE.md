@@ -102,12 +102,21 @@ Pure transformer (no PCA, no LUSI, no wv mask): top1=0.791, top3=0.962, 117 min
 - Model naturally discovers Fe3+ features regardless of initialization — PCA sharpens but doesn't create them
 
 ## No-Continuum PCA Finding
-PCA on raw reflectance (no continuum removal) at 4 heads achieves 0.810 — nearly matching 8-head transformer (0.813):
+PCA on raw reflectance (no continuum removal) breaks through the continuum-removed PCA ceiling:
+- 4/4H no-continuum: 0.810 (vs 0.804 with continuum)
+- **8/8H no-continuum: 0.821** — best overall result, beats 8H transformer (0.813)
 - Eliminates representation mismatch (eigenvectors in reflectance space, not absorption depth space)
-- Rescues Head 0: no-continuum PC1 maps to VNIR Fe3+ (413/492/528 nm) instead of atmospheric proxy
-- All 4 heads attend to spectroscopically relevant regions — no wasted heads
+- Rescues Head 0: no-continuum PC1 maps to VNIR Fe3+ instead of atmospheric proxy
 - Continuum removal was counterproductive: it discards albedo information useful for TOA classification
-- PCA ceiling at 0.805 only applies to continuum-removed PCA; raw reflectance PCA breaks through to 0.810
+
+## Cross-Scene Generalization (SW US desert, trained on Africa/Middle East)
+| Model | Train region | SW US (new) | Change |
+|-------|-------------|-------------|--------|
+| LUSI 8H | 0.901 | 0.927 | +2.6% |
+| Transformer 8H | 0.917 | 0.900 | -1.7% |
+| PCA 8H nocont | 0.917 | 0.859 | -5.8% |
+
+LUSI is the only model that improves on the new scene — consistent with Vapnik's theory that statistical invariants help when test conditions differ from training. PCA degrades most due to region-specific priors.
 
 ## Output Folders Convention
 Training outputs are in `Data/attn_outputs_{config}/`:

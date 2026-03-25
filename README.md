@@ -13,6 +13,9 @@ Transformer-based mineral classification from EMIT L1B TOA reflectance, bypassin
 | 3 | `kelli_scripts/EMITgroup1_conversion.py` | Convolve USGS ASCII spectra to EMIT's 285 bands via Gaussian bandpass, mask water vapor absorption bands (~1.4 µm, ~1.9 µm) and noisy edge (>2450 nm), and concatenate all Group 1 spectra into a matrix ready for PCA / Tetracorder pipeline ingestion. |
 | 4 | `kelli_scripts/spectral_trans_withqoi_attentionr14_pcalusi.py` | Training script for the physics-informed transformer. Supports PCA attention priors, LUSI consistency regularization, spectral derivatives, water vapor masking, and per-head attention export. Vectorized einsum attention (30% faster than r13). |
 | 5 | `kelli_scripts/Spectra_interrogationr2.ipynb` | Post-training analysis notebook. Attention-vs-diagnostic-band validation, per-head attention plots, prior evolution visualization, peak coincidence tests, Spearman rank correlation, training curve comparisons across ablation configs (4-head, 8-head, PCA, LUSI, 100k subsets), confusion matrix analysis by mineral abundance bin, random forest baseline comparison, full-image inference performance reports, knockoff feature selection analysis, and PLoM data augmentation evaluation. |
+| 6 | `kelli_scripts/Spectra_interrogate_comparePCA_xform_lusi.ipynb` | Cross-configuration comparison notebook. Overlays per-head attention across transformer, PCA, and LUSI variants. Multi-config Spearman and peak coincidence analysis. |
+| 7 | `kelli_scripts/UseXformer_fullimageinference_3d.py` | Full-image inference script. Loads checkpoint, classifies .npy spectral images, reports top-1/top-3 accuracy against ground truth, optional attention export. Appends scene ID to output filenames. |
+| 8 | `kelli_scripts/UseXformer_fullimageinference.py` | Full-image inference (2D variant). Same functionality as above for flat pixel arrays with ground truth in last column. |
 
 ### Data
 
@@ -48,11 +51,16 @@ Experiment results are stored in `Data/attn_outputs_{config}/` folders:
 
 | Folder | Config | Top-1 | Top-3 |
 |--------|--------|-------|-------|
-| `Data/attn_outputs_PCA4_diffwt1_cont/` | PCA 4-head + derivatives + continuum | 0.804 | 0.966 |
-| `Data/attn_outputs_Lusi4_diffwt1/` | LUSI-only 4-head + derivatives | 0.787 | 0.961 |
-| `Data/attn_outputs_PCA8_diffwt1_cont/` | PCA 8-head + derivatives + continuum + wv mask | 0.806 | 0.966 |
-| `Data/attn_outputs_Trans4_diff/` | Transformer only 4-head + derivatives (baseline) | 0.791 | 0.962 |
-| `Data/attn_outputs_PCALUSI8_diffcont_wts1/` | PCA + LUSI 8-head + derivatives + continuum + wv mask | 0.805 | 0.965 |
+| `Data/attn_outputs_Trans4_diff/` | Transformer 4H | 0.791 | 0.962 |
+| `Data/attn_outputs_Trans8_diff/` | Transformer 8H | 0.813 | 0.968 |
+| `Data/attn_outputs_PCA4_diffwt1_cont/` | PCA 4/4H continuum | 0.804 | 0.966 |
+| `Data/attn_outputs_PCA4_diffwt1_nocont/` | PCA 4/4H no-continuum | 0.810 | 0.967 |
+| `Data/attn_outputs_PCA4_8_diffwt1_cont/` | PCA 4/8H continuum | 0.806 | 0.966 |
+| `Data/attn_outputs_PCA4_8_diffwt1_nocont/` | PCA 4/8H no-continuum | 0.805 | 0.965 |
+| `Data/attn_outputs_PCA8_diffwt1_nocont/` | **PCA 8/8H no-continuum** | **0.821** | **0.971** |
+| `Data/attn_outputs_Lusi4_diffwt1/` | LUSI 4H | 0.787 | 0.961 |
+| `Data/attn_outputs_Lusi8_diffwt1/` | LUSI 8H | 0.796 | 0.963 |
+| `Data/attn_outputs_PCALUSI4_8_diffcont_wts1/` | PCA+LUSI 4/8H | 0.805 | 0.965 |
 
 Each folder contains the following outputs from `spectral_trans_withqoi_attentionr14_pcalusi.py`:
 
