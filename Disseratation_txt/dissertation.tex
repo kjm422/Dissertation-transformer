@@ -735,6 +735,48 @@ The concept of universal spectroscopic foundation models --- massive pre-trained
 \paragraph{Computational efficiency and onboard processing.}
 The $O(L^2)$ complexity of full self-attention remains a hurdle for operational deployment. State-Space Models (SSMs) like Mamba offer linear scaling with sequence length while maintaining global contextual awareness. Meanwhile, space agencies are researching onboard deployment of lightweight spectral transformers on FPGAs, enabling satellites to discard useless data (e.g., cloudy pixels) and transmit only actionable intelligence. The cross-attention architecture in this dissertation, with $O(H \times L)$ complexity, is already within the computational envelope required for such deployment scenarios.
 
+\subsection{Architectural Inspirations Beyond Remote Sensing}
+\label{sec:arch_inspirations}
+
+While the spectral transformer architectures surveyed above were designed specifically for hyperspectral imagery, the architecture in this dissertation draws primary inspiration from two foundational computer vision papers that address the same computational and structural challenges --- CNN-transformer hybridization and efficient attention for high-dimensional inputs --- at a more general level.
+
+\paragraph{DETR: CNN-Transformer hybridization.}
+Carion et al.\ \cite{carion2020detr} introduced the DEtection TRansformer (DETR) for end-to-end object detection, establishing a powerful hybrid methodology: a CNN backbone extracts dense local features, which are flattened, combined with positional encodings, and processed by a transformer encoder-decoder. DETR demonstrated that CNN inductive biases (local texture, spatial boundaries) and transformer global attention are complementary rather than competing. In the hyperspectral domain, this exact philosophy is mirrored by SSFTT \cite{sun2022ssftt}, which uses shallow 3D/2D CNNs to extract local spatial-spectral features before projecting them into semantic tokens for the transformer.
+
+The architecture in this dissertation adopts DETR's hybrid philosophy at the spectral level: the shape-aware tokenization stage (Section~\ref{chap:transformer}) computes spectral derivatives ($\Delta\hat{w}_j$, $\Delta^2\hat{w}_j$) that encode local spectral shape --- the 1D analogue of CNN-extracted local features --- before projecting them into the embedding space for cross-attention. This ``local-then-global'' pipeline ensures that the transformer operates on tokens that already encode absorption feature morphology (depth, asymmetry, width), rather than raw reflectance values that would require the attention mechanism to independently rediscover spectral shape.
+
+\paragraph{Perceiver: Asymmetric cross-attention for high-dimensional inputs.}
+Jaegle et al.\ \cite{jaegle2021perceiver} introduced the Perceiver to handle extremely high-dimensional inputs (video, point clouds, raw audio) without the standard transformer's $O(L^2)$ quadratic complexity. The key innovation is \emph{asymmetric cross-attention}: rather than computing self-attention among all $L$ input tokens, the Perceiver projects the massive input array into a much smaller, fixed-size latent bottleneck of $M$ learned query vectors ($M \ll L$), then performs self-attention strictly within that compact latent space. This reduces complexity from $O(L^2)$ to $O(M \times L + M^2)$, where $M$ is chosen independently of input dimensionality.
+
+This dissertation's cross-attention backbone is a direct descendant of the Perceiver architecture. Each attention head uses a single learned query vector $\mathbf{q}_h \in \R^d$ that cross-attends to all $L = 285$ spectral band tokens, producing a single summary vector $\mathbf{z}_h$ per head. With $H$ heads, the latent bottleneck has dimensionality $H \times d$ --- far smaller than the input sequence. This is precisely the Perceiver's asymmetric cross-attention, taken to its extreme: one query per head rather than a latent array. The resulting complexity is $O(H \times L)$, linear in the number of bands, which is critical for two reasons:
+\begin{enumerate}
+  \item \textbf{Scalability:} Full self-attention on 285 bands produces an $L \times L = 81{,}225$-element attention matrix per head. Cross-attention produces a $1 \times L = 285$-element attention vector per head --- a 285$\times$ reduction in attention computation.
+  \item \textbf{Interpretability:} Because each head produces a single attention vector over bands (not a band-to-band attention matrix), the weights $A_{h,j}$ directly indicate which wavelengths each head considers important. This is what enables the per-head spectroscopic validation in Chapter~\ref{chap:ablation} --- an interpretability advantage that would not exist with standard self-attention.
+\end{enumerate}
+
+Table~\ref{tab:arch_inspirations} summarizes how DETR and the Perceiver map onto the architecture in this dissertation.
+
+\begin{table}[htbp]
+\centering
+\caption{Architectural lineage: mapping DETR and Perceiver concepts to this dissertation.}
+\label{tab:arch_inspirations}
+\begin{tabular}{lll}
+\hline
+\textbf{Concept} & \textbf{Original Architecture} & \textbf{This Dissertation} \\
+\hline
+Local feature extraction & DETR: CNN backbone & Shape-aware tokenization \\
+ & & (derivatives as local spectral features) \\
+Positional encoding & DETR: spatial position & Learnable band-position embedding \\
+Asymmetric cross-attention & Perceiver: $M$ learned queries & $H$ learned query vectors ($\mathbf{q}_h$) \\
+Latent bottleneck & Perceiver: $M \times d$ latent array & $H \times d$ concatenated head outputs \\
+Complexity reduction & Perceiver: $O(M \times L)$ & $O(H \times L)$, linear in bands \\
+Physics injection & (not present) & Attention bias $\boldsymbol{\beta}_{h,j}$ from PCA priors \\
+\hline
+\end{tabular}
+\end{table}
+
+The key departure from both DETR and the Perceiver is the physics injection interface: the attention bias $\boldsymbol{\beta}_{h,j}$, initialized from PCA on USGS reference spectra (Chapter~\ref{chap:physics}), has no analogue in either source architecture. This mechanism enables domain knowledge to guide the learned queries toward spectroscopically meaningful spectral regions without altering the computational structure, bridging the gap between data-driven attention and physics-informed spectroscopy.
+
 \subsection{Gap: No RTM-Bypass via Spectral Transformers}
 
 A critical observation emerges from the literature: \emph{all existing spectral transformer architectures operate on atmospherically corrected surface reflectance or target atmospheric phenomena (clouds, methane) rather than surface mineralogy from uncorrected observations}. SpectralFormer, SSFTT, SSTN, and HSI-BERT are benchmarked on pre-processed datasets where atmospheric effects have already been removed. MethaneMapper detects an atmospheric constituent. SpecTf detects clouds. None bypass the radiative transfer model to classify surface minerals directly from L1B TOA reflectance.
@@ -743,12 +785,13 @@ This dissertation addresses this gap. The architecture presented below is, to th
 
 \section{Architecture Motivation}
 
-The transformer addresses the limitations identified in Section~\ref{sec:part1_limitations}:
+The transformer addresses the limitations identified in Section~\ref{sec:part1_limitations}, drawing on the DETR \cite{carion2020detr} and Perceiver \cite{jaegle2021perceiver} architectural principles discussed in Section~\ref{sec:arch_inspirations}:
 \begin{itemize}
-  \item \textbf{Spectral interpretability:} Attention weights $A_{h,j}$ provide per-band, per-head, per-class importance scores as a direct output of the forward pass.
-  \item \textbf{Global spectral context:} Unlike 1D-CNNs with local receptive fields, cross-attention evaluates all 285 bands simultaneously, enabling long-range spectral dependencies.
-  \item \textbf{Linear complexity:} Using learned queries rather than self-attention reduces complexity from $O(L^2)$ to $O(H \times L)$, where $H$ is the number of attention heads and $L = 285$ is the number of bands.
-  \item \textbf{Physics injection interface:} The attention bias $\boldsymbol{\beta}_{h,j}$ provides a clean mechanism for incorporating domain knowledge without changing the architecture.
+  \item \textbf{Spectral interpretability:} Attention weights $A_{h,j}$ provide per-band, per-head, per-class importance scores as a direct output of the forward pass. This interpretability is a consequence of the Perceiver-style asymmetric cross-attention: each head produces a 1D attention vector over bands rather than an $L \times L$ attention matrix, making per-head spectroscopic validation possible.
+  \item \textbf{Global spectral context:} Unlike 1D-CNNs with local receptive fields, cross-attention evaluates all 285 bands simultaneously, enabling long-range spectral dependencies (e.g., linking Fe$^{3+}$ charge transfer at 530~nm with crystal field transitions at 860~nm).
+  \item \textbf{Linear complexity:} Following the Perceiver paradigm, learned query vectors replace self-attention, reducing complexity from $O(L^2)$ to $O(H \times L)$, where $H$ is the number of attention heads and $L = 285$ is the number of bands.
+  \item \textbf{Local-then-global processing:} Following DETR's hybrid philosophy, shape-aware tokenization extracts local spectral features (derivatives) before the transformer evaluates global context, ensuring tokens encode absorption morphology prior to attention.
+  \item \textbf{Physics injection interface:} The attention bias $\boldsymbol{\beta}_{h,j}$ provides a clean mechanism for incorporating domain knowledge without changing the architecture --- a capability absent from DETR, Perceiver, and all HSI transformers in the literature.
 \end{itemize}
 
 \section{Data Preprocessing and Robust Normalization}
@@ -772,7 +815,7 @@ where $\Delta\hat{w}_j = \hat{w}_j - \hat{w}_{j-1}$ and $\Delta^2\hat{w}_j = \De
 
 \section{Cross-Attention Backbone}
 
-The input embeddings are projected into Key and Value spaces ($\mathbf{K} = \mathbf{E}_{final}\mathbf{W}_K$, $\mathbf{V} = \mathbf{E}_{final}\mathbf{W}_V$). For $H$ attention heads with learnable query vectors $\mathbf{q}_h \in \R^d$:
+Following the Perceiver's asymmetric cross-attention design \cite{jaegle2021perceiver}, the input embeddings are projected into Key and Value spaces ($\mathbf{K} = \mathbf{E}_{final}\mathbf{W}_K$, $\mathbf{V} = \mathbf{E}_{final}\mathbf{W}_V$), but queries are \emph{not} derived from the input. Instead, $H$ learnable query vectors $\mathbf{q}_h \in \R^d$ cross-attend to all $L$ spectral tokens:
 \begin{align}
 s_{h,j} &= \frac{\mathbf{q}_h \cdot \mathbf{K}_j}{\sqrt{d}} + \boldsymbol{\beta}_{h,j}, \\
 A_{h,j} &= \text{Softmax}\left(\frac{s_{h,j}}{\tau}\right), \\
