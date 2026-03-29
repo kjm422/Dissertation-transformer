@@ -1,0 +1,1069 @@
+\documentclass[11pt]{report}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in, footskip=0.5in}
+\usepackage{setspace}        % USC requires double spacing
+\doublespacing
+\usepackage{upquote}
+\usepackage{graphicx}
+\usepackage{wrapfig}
+\usepackage{float}
+\graphicspath{{Dissertation_images/}}
+\usepackage[font=small,singlelinecheck=false]{caption}
+\usepackage{enumitem}         % For glossary formatting
+
+\DeclareMathOperator{\diag}{\mathrm{diag}}
+\DeclareMathOperator{\tr}{tr}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\M}{\mathbb{M}}
+
+\begin{document}
+
+% ===== TITLE PAGE (no page number) =====
+% USC PhD template — do not bold text or add extraneous information
+\thispagestyle{empty}
+\begin{center}
+\vspace*{1in}
+
+Next-Generation Hyperspectral Remote Sensing Data Processing:\\
+Efficient and Scalable Workflows Integrating Transformer Architectures,\\
+Physics-Informed Priors, and Statistical Learning
+
+\vspace{0.5in}
+by
+
+\vspace{0.5in}
+Kelli McCoy
+
+\vspace{1in}
+A Dissertation Presented to the\\
+FACULTY OF THE USC GRADUATE SCHOOL\\
+UNIVERSITY OF SOUTHERN CALIFORNIA\\
+In Partial Fulfillment of the\\
+Requirements for the Degree\\
+DOCTOR OF PHILOSOPHY\\
+(ENVIRONMENTAL ENGINEERING)
+
+\vspace{0.75in}
+August 2026
+
+\end{center}
+
+\vfill
+\noindent Copyright 2026 \hfill Kelli McCoy
+
+\newpage
+
+% ===== PRELIMINARY PAGES (lowercase Roman numerals, starting at ii) =====
+\pagenumbering{roman}
+\setcounter{page}{2}
+
+% --- Dedication ---
+\chapter*{Dedication}
+\addcontentsline{toc}{chapter}{Dedication}
+
+\vspace*{2in}
+\begin{center}
+\textit{To my husband, James, for his tireless support and sacrifice over the past five years.}
+\end{center}
+
+\newpage
+
+% --- Acknowledgements ---
+\chapter*{Acknowledgements}
+\addcontentsline{toc}{chapter}{Acknowledgements}
+
+% TODO: Add your acknowledgements here
+I would like to thank my Advisor, Professor Roger Ghanem, for his guidance and support throughout this research. 
+
+
+
+\newpage
+
+% --- Table of Contents ---
+\tableofcontents
+\newpage
+
+% --- List of Tables ---
+\listoftables
+\addcontentsline{toc}{chapter}{List of Tables}
+\newpage
+
+% --- List of Figures ---
+\listoffigures
+\addcontentsline{toc}{chapter}{List of Figures}
+\newpage
+
+% --- Abstract ---
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+The increasing volume of hyperspectral data from missions like NASA's EMIT necessitates a shift toward computationally efficient, scalable processing. Traditional radiative transfer model (RTM)-based atmospheric correction faces high latency and generalization challenges, limiting the pace of science delivery and the ability to make timely operational decisions such as targeted revisits. This dissertation proposes an integrated framework that classifies minerals directly from L1B radiance or top-of-atmosphere (TOA) reflectance, bypassing RTM-based atmospheric correction entirely, by fusing Transformer architectures with physics-based and statistical learning methods to optimize mineral identification.
+
+Central to this workflow is a Transformer-based multi-head attention pooling model that captures complex spectral dependencies across all 285 EMIT bands simultaneously, reducing computational complexity from $O(L^2)$ to $O(H \times L)$. To address spectroscopic interpretability, the architecture incorporates PCA-derived spectral priors from USGS reference mineral spectra to initialize attention heads toward known diagnostic absorption features. Per-head attention analysis reveals that the model independently discovers spectroscopically valid features, validated by peak coincidence within $\pm$20~nm of literature values, providing interpretable evidence that the learned representations are physically meaningful. Learning Using Statistical Invariants (LUSI), inspired by Vapnik's complete statistical learning theory, enforces illumination and atmospheric invariance through consistency regularization, maintaining or improving classification performance on geographically independent test scenes, consistent with the theory that statistical invariants provide the greatest benefit when test conditions differ from training. The attention-derived band importance rankings support intelligent data prioritization --- identifying which spectral bands carry the most discriminative information enables targeted data volume reduction without sacrificing classification reliability.
+
+To address the scenario of limited training data, the framework implements Probabilistic Learning on Manifolds (PLoM), which discovers the diffusion manifold underlying a small initial dataset of SDS-processed spectral samples and generates additional statistically representative realizations, constrained to fluctuate in the neighborhood of this manifold. This manifold-based augmentation preserves the joint probability distribution of spectral signatures, enabling the training of high-capacity models from minimal labeled data. To further address the curse of dimensionality, the framework implements Knockoff feature selection, providing a statistically rigorous method to identify truly informative spectral bands while controlling the false discovery rate. Methods are applied at both the full image level, classifying entire EMIT scenes in a single inference pass, as well as the pixel-by-pixel conventional approach.
+
+Experimental results demonstrate that this fusion of attention-based learning, physics-informed spectral priors, statistical invariance regularization, knockoff-driven band selection, and manifold-based data generation reduces computational overhead while maintaining high mineral classification reliability across desert regions of the globe. The sensor-agnostic architecture is extensible beyond EMIT to other hyperspectral platforms. By eliminating the RTM bottleneck and enabling rapid scene-level inference, this framework reduces science turnaround time and mission operations cost, and establishes a foundation for onboard or edge-based processing where low-latency mineral classification could support autonomous revisit decisions and real-time science prioritization. This research provides a scalable pathway for efficient global mineral mapping and hyperspectral retrieval, overcoming the traditional trade-off between physical rigor and processing speed.
+
+\newpage
+
+% ===== MAIN BODY (Arabic numerals, starting at 1) =====
+\pagenumbering{arabic}
+
+% ######################################################################
+% CHAPTER 1: INTRODUCTION
+% ######################################################################
+\chapter{Introduction and Problem Framing}
+\label{chap:intro}
+
+This chapter establishes the context, motivation, and objectives for the research presented in this dissertation.
+It begins by introducing the critical role of hyperspectral remote sensing in climate modeling.
+NASA's Earth Surface Mineral Dust Source Investigation (EMIT) mission is highlighted as its cornerstone mineralogy mission, quantifying mineral dust radiative forcing to improve global climate models.
+Subsequently, it identifies the computational bottlenecks and limitations inherent in current physics-based data processing pipelines when tasked with handling petabyte-scale, high-dimensional data cubes.
+To address these challenges, this chapter formalizes the problem statement, introduces the RTM-bypass paradigm that unifies both parts of this dissertation, and outlines the core research objectives.
+
+\section{Motivation: Climate, Remote Sensing, Imaging Spectrometers, and EMIT}
+
+Satellites are informing climate conclusions with measurements taken hundreds of km above the Earth’s surface, through Earth’s atmosphere, without direct contact with their subject of interest. 
+This is achieved through sensors, mounted on satellites, aircraft, or other platforms, which collect data across various spectral bands by measuring electromagnetic radiation that is emitted, reflected, or scattered by the surface target. 
+Data is then analyzed to extract meaningful information about the subject (on Earth's surface).
+The data collected by these systems enable us to observe processes over time and space scales that are otherwise unattainable, providing critical insights into phenomena such as deforestation, atmospheric pollution, and ocean health.
+
+Figure~\ref{fig:fleet} depicts many of NASA’s operational space missions observing Earth today.
+NASA’s Earth Observing System Data and Information System (EOSDIS) archives and distributes data from various Earth-observing missions. 
+As of fiscal year 2025, the total archive volume exceeded 178.7 PB, with an average daily growth of approximately 160 TB \cite{nasa_earthdata_2025}.
+
+% Changed [htbp] to [H] to force exact placement
+\begin{figure}[htbp]
+\centering
+    \includegraphics[width=\textwidth]{CurrentandFutureEarthScienceMissions_asof11132025.png}
+    % This pulls the caption up closer to the image
+    \vspace{-20pt} 
+    \caption{\small NASA's Earth Science fleet as of 2025. Image courtesy of NASA Scientific Visualization Studio \cite{nasa_svs_fleet}.}
+    \label{fig:fleet}
+    % This pulls the following text up closer to the caption
+    \vspace{-10pt}
+\end{figure}
+
+The rapidly growing number of Earth observing missions has resulted in an unprecedented surge in the volume and complexity of remote sensing data. 
+Modern sensors produce high-dimensional datasets, including hyperspectral imagery and multi-angle observations, which require advanced processing methods. 
+Despite these advancements, existing pipelines face significant challenges in efficiently handling these data streams while ensuring the quality and reliability of the derived products.
+
+Imaging spectrometers, often referred to as hyperspectral sensors, acquire rasters of spectra to map geophysical phenomena \cite{thompson_emit_2024}. 
+Unlike traditional multispectral instruments that measure light in a few broad, discrete bands, imaging spectrometers capture electromagnetic radiation across hundreds of narrow, contiguous spectral channels. 
+This continuous sampling produces a three-dimensional ``data cube'' consisting of two spatial dimensions ($x, y$) and one high-dimensional spectral dimension ($\lambda$). 
+Consequently, every spatial pixel contains a detailed spectral signature, a unique optical fingerprint, that allows for the identification and quantification of surface materials. 
+Identifying these materials heavily relies on comparing orbital measurements against comprehensive reference databases, most notably the United States Geological Survey (USGS) Spectral Library \cite{kokaly2017usgs}. 
+This library provides the foundational, laboratory-measured pure spectral signatures required to classify and map minerals globally.
+Because of this rich information content and established reference data, these instruments have been utilized to study terrestrial and aquatic ecosystems, mineral and water resources, greenhouse gas point sources, and more. 
+While the first imaging spectrometers were developed over 40 years ago \cite{goetz1985}, the technology has recently reached a new stage of maturity, culminating in advanced orbital instruments capable of conducting continuous, high-fidelity global investigations.
+
+Mineral dust radiative forcing, the measure of how airborne dust alters the Earth's energy balance by scattering or absorbing sunlight, is one of the largest uncertainties in climate modeling \cite{ipcc_2021}. 
+This forcing profoundly impacts regional climates, driving changes in agriculture, precipitation, and desert encroachment. 
+The net effect of a dust plume depends heavily on its mineral composition. 
+Light-colored minerals (e.g., clays and quartz) reflect sunlight and cool the atmosphere, whereas dark-colored minerals (specifically iron oxides like hematite) absorb solar energy and generate heat. 
+
+\setlength{\columnsep}{15pt}
+\begin{wrapfigure}{L}{0.5\textwidth} 
+    \vspace{-2mm} 
+    \centering
+    \includegraphics[width=\linewidth]{EMIT_dust.png}
+    \vspace{-6mm}
+    \caption{\small NASA’s EMIT mission studies the composition of surface minerals in Earth’s arid regions, helping climate researchers better understand how dust affects climate when it is blown into the atmosphere. \cite{emit_factsheet}}
+    \label{fig:emit_dust}
+    \vspace{-2mm}
+\end{wrapfigure}
+
+Because current climate models often rely on highly uncertain estimates of iron oxide abundance (ranging from $0$ to $7\text{ wt}\%$), they can produce up to a $460\%$ uncertainty in regional radiative forcing predictions \cite{green_emit_2020}. 
+Meanwhile, physical soil samples from critical dust sources like North Africa reveal up to $30\text{ wt}\%$ iron oxide. 
+To close this critical knowledge gap, the National Aeronautics and Space Administration (NASA) developed the Earth Surface Mineral Dust Source Investigation (EMIT).
+
+EMIT maps the mineral composition of Earth's arid regions, providing the precise data needed to understand the true climatic impact of airborne dust.
+Mounted aboard the International Space Station (ISS), EMIT collects hyperspectral data on the composition and color of surface minerals across Earth’s most dust-productive regions (depicted in Figure~\ref{fig:emit_dust}). 
+Using a state-of-the-art imaging spectrometer operating in the visible to shortwave infrared (VSWIR) spectrum, EMIT provides the first global maps detailing the abundance of ten key minerals — hematite, goethite, illite, vermiculite, calcite, dolomite, montmorillonite, kaolinite, chlorite, and
+gypsum — each of which affects the absorption and reflection of solar radiation differently, influencing the climatic effects of airborne dust.
+
+However, translating these massive, complex hyperspectral data cubes into precise mineralogical maps presents a profound computational challenge. 
+Extracting accurate fractional abundances of these ten key minerals from highly mixed spatial pixels requires moving beyond traditional deterministic spectral matching. 
+To fully leverage the unprecedented volume of data provided by missions like EMIT, there is a critical need for efficient, highly scalable workflows capable of learning complex spectral representations, while providing contextual uncertainty.
+
+\section{Limitations of Current Data Pipelines}
+
+The data acquired from remote sensing instruments like EMIT are not direct measurements of surface properties. Instead, the observed reflectances are influenced by the interactions of light with gases and particles within the atmosphere, as well as instrument characteristics. The process of obtaining meaningful geophysical parameters from remotely sensed data relies heavily on accurate modeling of these interactions through Radiative Transfer Models (RTMs) and the implementation of robust retrieval algorithms.
+
+These processes face fundamental limitations:
+\begin{itemize}
+  \item \textbf{Computational Expense:} Detailed RTMs are computationally demanding, often requiring days to produce Level~2 geophysical products for a single observation granule. Retrieval algorithms often use approximations such as look-up tables, trading accuracy for speed.
+  \item \textbf{Ill-Posed Inverse Problem:} The retrieval process may not yield a unique solution, and the solution can be highly sensitive to small variations in the input data.
+  \item \textbf{Heavy reliance on deterministic spectral matching:} Current mineral identification (e.g., Tetracorder) depends on expert-curated rules and reference library matching that may not generalize across diverse scenes.
+  \item \textbf{Model Discrepancies:} Forward models are approximations of reality and do not perfectly represent the complex processes that determine how light interacts with the Earth system.
+\end{itemize}
+
+The EMIT pipeline illustrates these limitations concretely. The most computationally intensive stage is the Level~1B to Level~2A transition, where the ISOFIT software package implements an Optimal Estimation (OE) framework to retrieve surface reflectance by correcting for atmospheric absorption and scattering \cite{thompson2018}. 
+This Bayesian inversion introduces several acknowledged deficiencies:
+\begin{itemize}
+  \item \textbf{Aerosol Limits:} Observations with aerosol optical depth (AOD) greater than 0.5 at 550~nm are masked and excluded from Level~3 aggregation \cite{emit_l3_atbd}. This creates a thematic bottleneck: the very dust source regions EMIT aims to study often experience high aerosol loads that prevent valid reflectance retrieval.
+  \item \textbf{Water Vapor Biases:} High-resolution water vapor maps derived from ISOFIT can exhibit spatial standard deviation biases ranging from $-$7\% to $+$34\%, primarily related to assumed atmospheric profiles and changing solar zenith angle \cite{thompson_emit_2024}.
+  \item \textbf{Topographic Shadowing:} In rugged terrain, a topography-naive forward model simulates incident solar flux that is too high for shadowed pixels, causing the optimization to erroneously lower the best-fit reflectance (creating artificial ``dark patches'') and producing the characteristic ``blue hook'' artifact in mineral reflectance retrievals.
+  \item \textbf{Soil Fraction Threshold:} To ensure reliability, the pipeline applies a strict soil fraction threshold of 0.5: pixels with less than 50\% bare ground are masked and excluded from mineralogical analysis \cite{emit_l3_atbd}. While necessary to prevent vegetation signal contamination, sparse desert scrub or local terrain shading can cause significant dust source areas to be masked.
+\end{itemize}
+
+These specific deficiencies---aerosol masking, water vapor biases, topographic artifacts, and coverage thresholds---collectively motivate the RTM-bypass paradigm developed in this dissertation.
+
+\section{The RTM-Bypass Paradigm}
+\label{sec:rtm_bypass}
+
+This dissertation proposes a three-step paradigm for bypassing the computationally expensive RTM and retrieval infrastructure:
+
+\begin{enumerate}
+  \item \textbf{Collect and process} a representative subset of observations through the mission's Science Data System (SDS), producing trusted L1B-to-L2B training pairs.
+  \item \textbf{Learn the mapping} from L1B observations (radiance or TOA reflectance) directly to L2 mineralogical products using statistical or machine learning methods.
+  \item \textbf{Apply to future observations} without re-invoking the RTM, enabling rapid inference at both pixel and scene levels.
+\end{enumerate}
+
+This paradigm is implemented twice in this dissertation using different methodological approaches. Part~I employs established statistical methods (PCA, PLoM, conditional expectation, knockoffs, random forests) to learn the $\mathbf{W} \rightarrow \mathbf{Q}$ mapping, predicting both mineral group banddepth and mineral ID. Part~II introduces a Transformer-based attention architecture with physics-informed priors and statistical invariants, focusing on mineral ID classification with spectroscopic interpretability.
+
+\section{Problem Statement}
+
+In remote sensing, particularly for hyperspectral imaging, there is a need for scalable, statistically principled methods that:
+\begin{itemize}
+  \item Map L1B observations directly to L2 mineralogical products without explicit atmospheric correction.
+  \item Identify which spectral bands carry the most discriminative information for mineral classification.
+  \item Generalize across geographic regions and environmental conditions.
+  \item Provide interpretable evidence that learned representations are physically meaningful.
+\end{itemize}
+
+\section{Research Objectives}
+
+\begin{description}
+    \item[Objective 1 --- Skip the RTM.] Develop repeatable workflows that map EMIT radiance/TOA reflectance directly to mineralogical quantities of interest, bypassing radiative transfer modeling and Tetracorder-style inversion, to enable orders-of-magnitude faster processing while maintaining scientifically acceptable accuracy.
+    \item[Objective 2 --- Do more with less.] Identify the minimum spectral bands needed for reliable mineral mapping through learned attention and statistically rigorous feature selection, enabling intelligent data prioritization and volume reduction.
+    \item[Objective 3 --- Improve reliability.] Overcome mineral classification deficiencies caused by shadow effects and aerosol interference, and ensure generalization across geographic regions and sensor platforms.
+\end{description}
+
+\section{Contributions}
+
+\begin{itemize}
+  \item A statistical learning pipeline (PCA, PLoM, conditional expectation, knockoffs) that bypasses the RTM for both pixel-level and full-scene mineral retrieval, demonstrated on EMIT data from Africa and the Middle East.
+  \item A Transformer-based multi-head attention pooling architecture for per-pixel mineral classification from TOA reflectance, with physics-informed PCA priors and LUSI consistency regularization.
+  \item Per-head attention analysis validating that the model discovers spectroscopically meaningful features (Fe$^{3+}$ charge transfer and crystal field absorption bands) without explicit spectroscopic supervision.
+  \item A comprehensive ablation study across transformer-only, PCA-initialized, and LUSI configurations, demonstrating that PCA priors on raw reflectance (without continuum removal) achieve the best classification accuracy (82.1\% top-1 across 95 mineral classes).
+  \item Cross-scene generalization analysis showing that LUSI-based consistency regularization is the only configuration that maintains or improves performance on geographically independent test scenes.
+  \item Extensibility demonstration on NASA's PACE ocean color mission.
+\end{itemize}
+
+\section{Dissertation Organization}
+
+This dissertation is organized into two parts preceded by shared introductory and background chapters.
+
+\textbf{Chapters~1--3} establish the context, introduce EMIT, and define the data structures and notation used throughout.
+
+\textbf{Part~I (Chapters~4--6)} presents the statistical learning approach to RTM-free retrieval. Chapter~4 covers dimensionality reduction methods (PCA, NMF, autoencoders). Chapter~5 addresses data augmentation via PLoM and feature selection via knockoffs. Chapter~6 presents prediction results at both pixel and full-scene levels using conditional expectation and random forests, predicting both mineral group banddepth and mineral ID.
+
+\textbf{Part~II (Chapters~7--9)} introduces the physics-informed Transformer architecture. Chapter~7 describes the cross-attention backbone with shape-aware tokenization. Chapter~8 details the physics-informed spectral priors and LUSI consistency regularization. Chapter~9 presents the full ablation study and spectral attention analysis.
+
+\textbf{Chapters~10--11} address cross-scene generalization across both approaches and present conclusions and future work.
+
+
+% ######################################################################
+% CHAPTER 2: BACKGROUND
+% ######################################################################
+\chapter{Background: Imaging Spectroscopy and Remote Sensing}
+\label{chap:background}
+
+\section{Fundamentals of Imaging Spectroscopy}
+
+While remote sensing has revolutionized our ability to monitor and understand complex Earth systems, it is important to note that these sensors do not directly observe the phenomena of interest, such as vegetation health, atmospheric composition, or ocean temperature. Instead, raw sensor data must be processed and interpreted using phenomenological models and transformations to relate the observed signals to physical or biophysical characteristics. These models introduce additional layers of complexity and uncertainty, as they rely on assumptions and approximations to bridge the gap between measurements and real-world phenomena.
+
+Optical remote sensing operates in the visible (0.4--0.7~$\mu$m), near infrared (0.7--1.0~$\mu$m), and short-wave infrared (1.0--2.5~$\mu$m) regions, where reflected solar radiation dominates. This spectral range is the sweet spot for mineral identification: the sun provides a bright, broadband, stable illumination source, the atmosphere is reasonably transparent, and minerals exhibit rich diagnostic absorption features due to electronic transitions and vibrational overtones of molecular bonds.
+
+% TODO: Spectral mixing, mineral absorption features, diagnostic bands
+% TODO: USGS Spectral Library and its role
+
+\section{The Remote Sensing Data Processing Chain}
+
+The standard remote sensing processing chain transforms raw sensor data through hierarchical levels:
+\begin{itemize}
+  \item \textbf{Level 0:} Raw data from the instrument.
+  \item \textbf{Level 1:} Radiometrically calibrated and geometrically corrected data. Level~1B provides at-sensor radiance or TOA reflectance.
+  \item \textbf{Level 2:} Derived geophysical parameters. For EMIT, this includes atmospheric correction to surface reflectance (L2A) and mineral identification via Tetracorder (L2B).
+  \item \textbf{Level 3/4:} Gridded and multi-measurement products.
+\end{itemize}
+
+The transition from Level~1 to Level~2 is the critical bottleneck: it requires radiative transfer modeling to remove atmospheric effects, followed by spectral matching against reference libraries. Both steps are computationally expensive and introduce cascading uncertainties.
+
+\section{The Broader Data Lifecycle}
+
+The processing chain above describes the analytical pipeline, but the full remote sensing data lifecycle begins well before data reaches the science operations center. The lifecycle encompasses spacecraft and instrument design, radiometric and spectral calibration, space operations (attitude control, thermal stability, imaging scheduling), data transmission to ground stations, and data storage and management in standardized formats (e.g., NetCDF). Decisions and uncertainties at each upstream stage propagate into the quality of derived products. Current uncertainty quantification practices focus almost exclusively on the retrieval step (Level~1 to Level~2), leaving uncertainties from calibration deficiencies, transmission losses, and design artifacts largely uncharacterized. While a comprehensive lifecycle uncertainty analysis is beyond the scope of this dissertation, the RTM-bypass methods developed here reduce one major source of cascading uncertainty by eliminating the physics-based retrieval step entirely.
+
+\section{Current Approaches to Accelerating Retrieval}
+\label{sec:rtm_emulation}
+
+Physics-based RTMs such as MODTRAN, 6S, and libRadtran simulate the propagation of electromagnetic radiation through the atmosphere, accounting for absorption, scattering, and emission by atmospheric gases (H$_2$O, CO$_2$, O$_3$), aerosols, and cloud particles. Historically, operational systems circumvented the cost of line-by-line radiative transfer by interpolating multidimensional Look-Up Tables (LUTs) of pre-computed RTM simulations. However, as state vector dimensionality increases --- encompassing aerosol optical depth, column water vapor, viewing geometry, solar zenith angle, and terrain elevation --- LUT size grows exponentially. For hyperspectral missions capturing several hundred spectral channels, LUT data volumes increase by one to two orders of magnitude compared to legacy multispectral missions, leading to prohibitive memory requirements and unacceptable interpolation errors.
+
+To overcome this bottleneck, the community has pivoted toward \emph{emulation}: constructing statistical or machine learning surrogates $\hat{F}(\mathbf{x})$ that approximate the RTM forward model $F(\mathbf{x})$ at a fraction of the computational cost, routinely achieving acceleration factors of $10^2$ to $10^6$ per evaluation. Emulation strategies bifurcate into two categories: \emph{forward emulators} that replicate RTM radiance simulations from input state variables (serving as fast substitutes within iterative retrieval algorithms), and \emph{retrieval emulators} that map observed radiance directly to geophysical state variables, functionally replacing the inversion process.
+
+\subsection{Statistical Forward Model Emulators}
+
+\textbf{Gaussian Process Regression (GPR)} is a non-parametric Bayesian approach that infers a probability distribution over functions, providing both a mean prediction and a predictive variance (built-in epistemic uncertainty). GPR emulators can reconstruct MODTRAN-simulated hyperspectral data with relative errors below 1\% at the 95th percentile, even when trained on databases of just 1,000 samples. For the OCO-2 and OCO-3 $X_{\text{CO}_2}$ retrieval missions, Lamminp\"a\"a et al.\ \cite{lamminpaa2024} developed a GP emulator using kernel flow optimization within the ReFRACtor multi-instrument framework, computing both forward radiances and analytical Jacobians orders of magnitude faster than the full-physics model while maintaining sub-1\% relative error. The emulation strategy manages separate, specifically tuned emulators for distinct atmospheric aerosol types, dynamically matching measurement location with global aerosol species maps.
+
+\textbf{Principal Component-based RTM (PCRTM)} exploits the extreme spectral collinearity of hyperspectral data by performing radiative transfer calculations directly in PCA-reduced space. For MODTRAN emulators, preserving the first 20 principal components typically captures over 99\% of spectral variance, yielding computational speedups of multiple orders of magnitude. PCRTM is heavily utilized in NASA operational processing for AIRS, CrIS, and IASI instruments.
+
+\subsection{Neural Network Forward Emulators}
+
+Deep learning emulators offer unparalleled execution speed on GPU/FPGA hardware. The flagship example is \textbf{sRTMnet} \cite{brodrick2021}, a neural network emulator developed at JPL and integrated into EMIT's Level~2A algorithm via the open-source ISOFIT codebase. sRTMnet emulates the correlated-$k$ approach of MODTRAN~6.0 using absorption coefficients from the HITRAN~2012 line list, coupled with a 6S~v2.1 surrogate for aerosol radiative transfer. This hybrid achieves a computational speedup exceeding 3,000$\times$ compared to native high-fidelity RTM execution. Recent ISOFIT~3.x updates transitioned sRTMnet to a pure NumPy implementation, removing TensorFlow dependencies for operational portability.
+
+FastMAPOL \cite{gao2023} uses cascading neural networks for simultaneous aerosol and ocean property retrieval from PACE HARP2 multi-angle polarimetric observations, demonstrating that emulator architectures can handle coupled atmosphere-ocean systems.
+
+\subsection{Optimal Estimation and Hybrid Emulation}
+
+The current state-of-the-art reconciles emulator speed with physical rigor through Optimal Estimation (OE), a Bayesian inversion framework that finds the state vector $\mathbf{x}$ maximizing the posterior probability $P(\mathbf{x}|\mathbf{y})$ by minimizing the cost function:
+\[
+J(\mathbf{x}) = (\mathbf{y} - F(\mathbf{x}))^T \mathbf{S}_\epsilon^{-1} (\mathbf{y} - F(\mathbf{x})) + (\mathbf{x} - \mathbf{x}_a)^T \mathbf{S}_a^{-1} (\mathbf{x} - \mathbf{x}_a),
+\]
+where $\mathbf{y}$ is the observed radiance, $\mathbf{S}_\epsilon$ is the observation error covariance, $\mathbf{x}_a$ is the prior state, and $\mathbf{S}_a$ is the prior covariance \cite{thompson2018}. Because this optimization requires iterative evaluation of $F(\mathbf{x})$ and its Jacobians, substituting the native RTM with sRTMnet or a GP emulator enables \emph{Accelerated Optimal Estimation} (AOE) --- combining deep learning speed with Bayesian uncertainty quantification. Unlike sequential methods that estimate the atmosphere in one step and then algebraically invert for surface reflectance, OE simultaneously estimates both, inherently accounting for surface-atmosphere coupling.
+
+Eckert et al.\ \cite{eckert2024} extend this framework with Spatially Constrained OE (SCOE), introducing Gaussian Process priors that define covariance explicitly across the spatial domain. This modification penalizes physically disjointed atmospheric retrievals (e.g., discontinuous water vapor fields), producing smoother, more realistic atmospheric fields without post-processing smoothing filters.
+
+Post-hoc approaches also contribute: Braverman et al.\ \cite{braverman2021} use Gaussian mixture regression to model $P(\mathbf{x}|\hat{\mathbf{x}})$, providing sounding-specific uncertainty estimates without explicit enumeration of error sources.
+
+\subsection{Spatial Processing Paradigms: Pixel-by-Pixel vs Full-Image}
+\label{sec:spatial_paradigms}
+
+A critical divergence in modern emulation strategies concerns the handling of spatial context:
+
+\paragraph{Pixel-by-pixel processing.}
+Traditionally, RTMs and retrieval algorithms operate independently on each spatial pixel. While straightforward and parallelizable, this paradigm ignores the strong spatial correlations in atmospheric fields --- water vapor, trace gases, and aerosols exhibit continuous distributions that do not fluctuate discontinuously between adjacent 60-meter pixels. Processing millions of pixels independently represents massive computational redundancy and susceptibility to localized noise and non-convergence.
+
+\paragraph{Superpixel segmentation and empirical line extrapolation.}
+ISOFIT addresses this by pre-segmenting the radiance cube into spectrally homogeneous superpixels via Simple Linear Iterative Clustering (SLIC) on the first five radiance principal components. Full iterative OE inversion (using sRTMnet) is executed only on sparse superpixel centroids, reducing millions of inversions to thousands. Solutions are extrapolated to full resolution using localized Empirical Line (EL) fitting: $L_{\text{obs}} = a + b \cdot \rho_s$, where the slope $b$ and intercept $a$ are derived from superpixel solutions via ordinary least squares. This unified strategy achieves one to two orders of magnitude speedup with virtually no measurable penalty to scientific accuracy. The EMIT Level~2A and the forthcoming SBG mission atmospheric correction pipelines both rely on this approach, with SBG validation campaigns demonstrating surface reflectance RMSE of 1.1\% or better.
+
+\paragraph{Full-image deep learning.}
+2D/3D CNNs and U-Net architectures operate on image patches or full data cubes, inherently capturing spatial dependencies through convolutional feature extraction. PCA-2D-CNN architectures extract both deep spectral dependencies and localized spatial features simultaneously, producing reconstructions more robust to high-frequency noise than pixel-by-pixel methods. Image-to-image translation via conditional adversarial networks (GANs) is being explored to directly transform radiance cubes into corrected reflectance maps. The full-scene approach developed in Part~I of this dissertation (Chapter~\ref{sec:fullimage}) extends this paradigm using PCA+PLoM+conditional expectation rather than CNNs.
+
+\subsection{Emerging Directions: Transformers for Radiative Transfer}
+
+The frontier of RTM emulation is shifting toward attention-based architectures. Malsky et al.\ (2025) \cite{malsky2025} developed an encoder-only transformer neural network to emulate 1D atmospheric radiative transfer for exoplanetary General Circulation Models. Although designed for hot Jupiter atmospheres operating on independent profile-by-profile (pixel-by-pixel) columns, the underlying framework is directly relevant: the transformer reproduces bolometric two-stream layer fluxes with mean test errors of approximately 1\% while achieving 100$\times$ speedup over traditional methods. This demonstrates that attention mechanisms can learn the complex physical mapping of radiative transfer, paving the way for integrating transformer-based emulators into Earth observation pipelines.
+
+Physics-informed neural networks --- where loss functions are constrained by radiative transfer differential equations --- represent another active direction, ensuring emulator outputs respect energy conservation and scattering physics even outside the training distribution.
+
+\subsection{Positioning of This Dissertation: Post-Hoc vs In-Line Methods}
+
+A critical distinction among retrieval acceleration methods is whether they operate \emph{in-line} (embedded within the operational processing pipeline at the time of data acquisition) or \emph{post-hoc} (trained on data products that have already been processed through the mission's Science Data System). Table~\ref{tab:emulation_spectrum} positions the approaches discussed above along two axes: RTM dependence and operational integration.
+
+\begin{table}[htbp]
+\centering
+\caption{Spectrum of approaches for accelerating hyperspectral retrieval.}
+\label{tab:emulation_spectrum}
+\begin{tabular}{lllll}
+\hline
+\textbf{Approach} & \textbf{RTM Role} & \textbf{Integration} & \textbf{Example} & \textbf{Speedup} \\
+\hline
+Forward emulator & Surrogate inside OE loop & In-line & sRTMnet, GP/OCO-2 & $10^2$--$10^3\times$ \\
+Retrieval emulator & Train on RTM synthetics & In-line & FastMAPOL, direct CNN & $10^3$--$10^4\times$ \\
+Post-hoc UQ & None (fits to SDS outputs) & Post-hoc & Braverman et al.\ GMR & --- \\
+RTM bypass (this work) & None at inference & Post-hoc & PLoM+CE, Transformer & $10^4$--$10^6\times$ \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{In-line methods} --- forward emulators (sRTMnet, GP/OCO-2, PCRTM) and retrieval emulators (FastMAPOL, direct-inversion CNNs) --- are designed to replace or accelerate the RTM \emph{within} the operational pipeline. They require RTM-generated synthetic training data (simulated atmospheric states paired with simulated radiances) and are deployed as components of the mission's real-time or near-real-time processing chain. Their training data is synthetic, generated by the RTM itself, and their purpose is to make the existing pipeline faster.
+
+\textbf{Post-hoc methods} operate on data that has already passed through the mission's primary SDS processing. Braverman et al.\ \cite{braverman2021} exemplify this category: their Gaussian mixture regression models $P(\mathbf{x}|\hat{\mathbf{x}})$ using SDS-produced retrieval outputs, providing sounding-specific uncertainty estimates without re-invoking the RTM. Critically, their method trains on \emph{operational} SDS products, not RTM synthetics.
+
+The methods in this dissertation are fundamentally post-hoc. Both Part~I (PCA+PLoM+conditional expectation) and Part~II (physics-informed transformer) train on paired L1B TOA reflectance and L2B mineral identification products that have been fully processed through the EMIT SDS --- including ISOFIT atmospheric correction, Tetracorder mineral matching, and all associated quality screening. The models learn the composite $\mathbf{W} \rightarrow \mathbf{Q}$ mapping that the SDS implements through its multi-stage pipeline, and apply that learned mapping to new L1B observations without re-invoking any component of the SDS. This post-hoc positioning has two implications:
+\begin{enumerate}
+  \item \textbf{Training data quality is bounded by the SDS:} The models cannot exceed the accuracy of the SDS-produced labels they train on. Tetracorder misidentifications propagate into the learned mapping, creating a circular dependency for validation (discussed in Chapter~\ref{chap:conclusions}).
+  \item \textbf{No RTM expertise required at deployment:} Once trained, the models require only L1B reflectance as input. No atmospheric state vector, no RTM configuration, and no iterative optimization --- enabling inference by non-specialists and on platforms (edge, onboard) where the full SDS cannot run.
+\end{enumerate}
+
+\section{Gaps and Limitations}
+
+The preceding review reveals several limitations that motivate the present work:
+\begin{itemize}
+  \item In-line emulation methods (sRTMnet, GP/OCO-2, FastMAPOL) accelerate the RTM but remain embedded in the operational pipeline, requiring RTM-generated synthetic training data and atmospheric state vector expertise at deployment. The only prior post-hoc method (Braverman et al.) provides uncertainty estimates but does not perform the retrieval itself.
+  \item Linearized uncertainty estimates (OE posterior covariance) may miss significant non-linearities in the atmosphere-surface coupling.
+  \item Heavy reliance on Gaussian assumptions; breakdown in non-Gaussian regimes where mineral mixtures produce multimodal spectral distributions.
+  \item No existing method provides spectroscopically interpretable evidence of which bands drive mineral classification decisions --- attention weights are not examined for physical meaning.
+  \item Spatial processing advances (superpixel, SCOE) improve atmospheric correction but do not address the downstream mineral identification bottleneck.
+  \item No post-hoc method has demonstrated end-to-end L1B$\rightarrow$mineral classification that bypasses the full SDS pipeline while providing interpretable spectroscopic validation.
+\end{itemize}
+
+
+% ######################################################################
+% CHAPTER 3: EMIT DATA STRUCTURES
+% ######################################################################
+\chapter{EMIT: Instrument and Data Structures}
+\label{chap:emit}
+
+The Earth Surface Mineral Dust Source Investigation (EMIT) mission advances our understanding of how mineral dust from arid regions influences Earth’s climate, weather, and ecosystems. Mounted aboard the International Space Station (ISS), EMIT collects hyperspectral data on the composition and color of surface minerals across Earth’s most dust-productive regions. Using a state-of-the-art imaging spectrometer operating in the visible to shortwave infrared (VSWIR) spectrum (approximately 380--2500~nm), EMIT provides the first global maps detailing the abundance of ten key minerals --- hematite, goethite, illite, vermiculite, calcite, dolomite, montmorillonite, kaolinite, chlorite, and gypsum --- in 285 contiguous spectral bands with a spectral sampling interval of approximately 7.4~nm and a spatial resolution of approximately 60~meters.
+
+\section{Instrument and Measurement Geometry}
+
+The EMIT instrument is a Dyson imaging spectrometer utilizing only six optical elements to achieve high signal-to-noise ratios and spectral uniformity exceeding 98\% \cite{thompson_emit_2024}. From its focal plane array, onboard avionics read out raw detector counts at 1.6~Gbps \cite{emit_l2a_atbd}. To manage the limited ISS downlink bandwidth, the avionics software packages data into frames of 32 instrument lines, screens for cloudy pixels, and performs lossless 4:1 compression before transmission \cite{emit_l3asa_userguide}. Table~\ref{tab:emit_specs} summarizes the key instrument specifications.
+
+\begin{table}[htbp]
+\centering
+\caption{EMIT instrument specifications and their significance for the processing pipeline.}
+\label{tab:emit_specs}
+\begin{tabular}{lll}
+\hline
+\textbf{Metric} & \textbf{Specification} & \textbf{Significance for Pipeline} \\
+\hline
+Raw Data Rate & 1.6 Gbps & Drives need for onboard compression \\
+Spectral Range & 380--2500 nm & Covers mineral and GHG absorption features \\
+Spectral Sampling & $\sim$7.5 nm & Discriminates subtle mineral chemistry \\
+Ground Sampling Distance & $\sim$60 m & Balances coverage with spatial detail \\
+Swath Width & $\sim$75 km & Regional mapping in single ISS overpasses \\
+Compression Ratio & 4:1 (lossless) & Required for ISS downlink constraints \\
+\hline
+\end{tabular}
+\end{table}
+
+Each EMIT granule contains a three-dimensional hyperspectral data cube structured as $1280 \times 1242$ spatial pixels across 285 spectral bands, stored as individual NetCDF files. This study leverages approximately 396 granules across Africa and the Middle East.
+
+\subsection{Calibration Approach}
+
+Unlike many orbital sensors, EMIT does not feature an onboard calibration system such as a solar diffuser or lamp assembly \cite{thompson_emit_2024}. Instead, the mission relies on vicarious calibration using the Radiometric Calibration Network (RadCalNet) and field campaigns at sites such as the Black Rock Desert in Nevada and the Salton Sea in California. This approach has demonstrated agreement with RadCalNet measurements within 5\% across most spectral channels \cite{thompson_emit_2024}, but reliance on external validation means that delays in ground-based data collection or atmospheric interference at calibration sites directly impact the ability to update calibration coefficients. Additionally, spectral response functions can shift during deployment (``smile'' or ``frown'' artifacts in push-broom sensors), requiring precise characterization to prevent systematic errors in downstream atmospheric correction.
+
+\subsection{Geometric and Radiometric Performance}
+
+System characterization reports identify specific performance attributes that users must account for when working with EMIT data \cite{usgs_emit_syschar}. Table~\ref{tab:emit_performance} summarizes key metrics.
+
+\begin{table}[htbp]
+\centering
+\caption{EMIT geometric and radiometric performance characteristics \cite{usgs_emit_syschar,thompson_emit_2024}.}
+\label{tab:emit_performance}
+\begin{tabular}{lll}
+\hline
+\textbf{Attribute} & \textbf{Metric Value} & \textbf{Implications} \\
+\hline
+Spectral Uniformity & $>$98\% & High consistency for mineral mapping \\
+VNIR-to-SWIR Co-registration & $<$8 m & Minimizes cross-detector spatial artifacts \\
+Absolute Geometric Offset (vs.\ OLI) & $-$0.266 to 0.731 pixels & May require orthorectification \\
+Radiometric Uncertainty & 3.1--6.0\% & Within range for atmospheric correction \\
+Spectral Shift Precision & $<$1\% of a wavelength & Ensures absorption feature alignment \\
+\hline
+\end{tabular}
+\end{table}
+
+Band-to-band geometric performance generally falls within $-$0.355 to 0.210 pixels, with notable exceptions in certain SWIR channels. The absolute geometric offset relative to Landsat~8 OLI can range from approximately $-$16 to 44 meters \cite{usgs_emit_syschar}, creating challenges for applications requiring precise multi-temporal change detection or pixel-level data fusion.
+
+\section{Variable Definitions and Notation}
+
+Let $\mathbf{W}$ denote the set of features (spectral measurements) and $\mathbf{Q}$ the set of quantities of interest (QoIs). These variables can be aggregated at different spatial levels. A subscript $a$ indicates the aggregation level, with $\mathbf{W}_a$ and $\mathbf{Q}_a$ representing the aggregated feature set and QoI set, respectively. Let $\mathbf{X}_a$ denote the joint random matrix describing the relationship between $\mathbf{W}_a$ and $\mathbf{Q}_a$, with $\mathbf{X}_a \in \R^{n_a \times d}$.
+
+\begin{table}[htbp]
+\centering
+\caption{Variable definitions at pixel and full-image aggregation levels.}
+\label{tab:variables}
+\begin{tabular}{lll}
+\hline
+\textbf{Variable} & \textbf{Pixel level ($a = p$)} & \textbf{Full image ($a = f$)} \\
+\hline
+Features, $\mathbf{W}$ & $\mathbf{W}_p \in \R^{N \times 285}$ & $\mathbf{W}_f \in \R^{396 \times 453{,}081{,}600}$ \\
+QoIs, $\mathbf{Q}$ & $\mathbf{Q}_p \in \R^{N \times 2}$ & $\mathbf{Q}_f \in \R^{396 \times 3{,}179{,}520}$ \\
+\hline
+\end{tabular}
+\end{table}
+
+In Part~II, the per-pixel notation uses $\mathbf{W}_p \in \R^{L}$ (or $\mathbf{w}_p$) for a single pixel’s reflectance across $L=285$ bands, $\hat{w}$ for the normalized spectrum, and $Q_1 = 95$ for the number of Group~1 mineral classes.
+
+\section{Mineral Grouping and Spectral Libraries}
+
+EMIT’s mineral identification uses a grouping matrix containing 293 reference spectra organized into Group~1 ($Q_1 = 95$ classes, primarily iron oxides, pyroxenes, feldspars, and other 1~$\mu$m absorbers) and Group~2 ($Q_2 = 199$ classes, primarily clays, carbonates, and sulfates with SWIR features). The reference spectra are drawn from the USGS Spectral Library version~06 \cite{kokaly2017usgs}.
+
+\subsection{Spectral Confusion and Unmixing Challenges}
+
+A primary bottleneck in the Level~2B mineralogy pipeline is spectral similarity between mineral species, which leads to ``spectral confusion’’ during the unmixing stage \cite{emit_l3_atbd}. Table~\ref{tab:unmixing} summarizes the key challenges by mineral group.
+
+\begin{table}[htbp]
+\centering
+\caption{Spectral unmixing challenges by core mineral group.}
+\label{tab:unmixing}
+\begin{tabular}{lll}
+\hline
+\textbf{Mineral Group} & \textbf{Representative Minerals} & \textbf{Unmixing Challenge} \\
+\hline
+Iron Oxides & Hematite, Goethite & Overlapping crystal field absorption features \\
+Clays & Kaolinite, Illite, Montmorillonite & Subtle shifts in the 2200~nm Al-OH feature \\
+Carbonates & Calcite, Dolomite & Distinguishing Mg-rich from Ca-rich endmembers \\
+Sulfates & Gypsum & Identifying hydration states in heterogeneous soils \\
+Silicates & Chlorite, White Micas & Detecting Al-rich vs.\ Mg-Fe-rich variations \\
+\hline
+\end{tabular}
+\end{table}
+
+If the spectral library lacks the correct mineral for a region, the algorithm will force a fit using available endmembers, potentially producing errors not captured in uncertainty maps. The Level~2B ATBD acknowledges that mineral misidentification is not yet fully captured in uncertainty products, and that as EMIT views previously unmeasured regions, reference libraries may be insufficient \cite{emit_l3_atbd}. The hematite--goethite confusion is particularly relevant to this dissertation: the per-head attention analysis in Part~II (Chapter~\ref{chap:ablation}) demonstrates that the transformer learns to distinguish these two minerals through Fe$^{3+}$ diagnostic bands that the standard pipeline struggles to separate.
+
+\section{Pixel-Level vs Scene-Level Formulations}
+
+\begin{itemize}
+  \item \textbf{Pixel-level:} Classify or estimate $\mathbf{Q}$ given a single pixel’s spectrum $\mathbf{W}_p$. This is the conventional approach used by Tetracorder and the transformer architecture in Part~II.
+  \item \textbf{Scene-level:} Classify or estimate $\mathbf{Q}$ given an entire granule’s spectra $\mathbf{W}_f$. This ``top-down’’ approach, developed in Part~I, preserves spatial context and enables millisecond-scale inference for full mineral maps.
+\end{itemize}
+
+
+% ######################################################################
+% PART I: STATISTICAL LEARNING METHODS
+% ######################################################################
+\part{Statistical Learning Methods for RTM-Free Retrieval}
+\label{part:statistical}
+
+
+% ######################################################################
+% CHAPTER 4: DIMENSIONALITY REDUCTION
+% ######################################################################
+\chapter{Dimensionality Reduction and Representation Learning}
+\label{chap:dimred}
+
+The EMIT hyperspectral data cube presents a formidable dimensionality challenge: each scene contains over 1.6~million pixels, each with 285 spectral features, yielding a full-scene feature dimension exceeding 450~million before reduction. This chapter describes the methods used to compress this high-dimensional data while preserving mineralogical structure.
+
+\section{Principal Component Analysis (PCA)}
+
+PCA is applied independently to each spectral band grouping and ancillary variable. Specifically, PCA is performed on each submatrix $\mathbf{W}_j \in \R^{n \times 1{,}589{,}760}$, retaining 95\% of the explained variance:
+\[
+\text{PCA}(\mathbf{W}_j) = \tilde{\mathbf{W}}_j \quad \text{for each } j = 1, \ldots, m,
+\]
+where $\tilde{\mathbf{W}}_j \in \R^{n \times d_j}$ and $d_j$ is the reduced dimension per feature group. Similarly, PCA is performed on $\mathbf{Q}_f$ to yield the reduced joint matrix $\tilde{\mathbf{X}} = \{\tilde{\mathbf{W}}, \tilde{\mathbf{Q}}\}$ with $d \ll 10^6$.
+
+\section{Non-Negative Matrix Factorization (NMF)}
+
+% TODO: NMF approach and comparison with PCA for spectral data
+
+\section{Autoencoder-Based Representations}
+
+% TODO: Autoencoder architecture and results
+
+\section{Comparison of Reduction Methods}
+
+% TODO: Quantitative comparison across PCA, NMF, and autoencoder
+
+
+% ######################################################################
+% CHAPTER 5: DATA AUGMENTATION AND FEATURE SELECTION
+% ######################################################################
+\chapter{Data Augmentation and Feature Selection}
+\label{chap:augmentation}
+
+\section{Probabilistic Learning on Manifolds (PLoM)}
+
+Although dimensionality is reduced through PCA, the available training set remains limited to approximately 99 uncorrupted EMIT granules for the full-scene approach. To overcome this limitation, Probabilistic Learning on Manifolds (PLoM) \cite{ghanem2018} is used to generate $N_f = 100{,}000$ synthetic full-scene realizations that statistically resemble the original 99 samples.
+
+The PLoM approach leverages diffusion maps to uncover the intrinsic geometric structure of the data manifold. A diffusion map projects the high-dimensional feature space onto a lower-dimensional manifold while preserving nonlinear relationships. For this problem, the intrinsic manifold dimension is 85. Using the diffusion-map structure and a projected It\^{o} stochastic differential equation (ISDE), new synthetic samples are generated that are constrained to fluctuate in the neighborhood of the discovered manifold, preserving the joint probability distribution of spectral signatures and mineral labels.
+
+\section{Knockoff Feature Selection}
+
+The Model~X Knockoff method \cite{candes2018} provides a statistically rigorous framework for identifying which spectral bands carry discriminative information while controlling the false discovery rate (FDR). In the hyperspectral domain, where 285 bands create a high-dimensional feature space, knockoffs offer a principled alternative to heuristic band selection.
+
+The approach constructs synthetic ``knockoff'' variables $\tilde{X}_j$ for each original predictor $X_j$ that satisfy two properties:
+\begin{itemize}
+  \item \textbf{Exchangeability:} Swapping any subset $S$ of variables $X_j$ with their knockoff counterparts $\tilde{X}_j$ does not alter the joint distribution: $(X, \tilde{X})_{\text{swap}(S)} \overset{d}{=} (X, \tilde{X})$.
+  \item \textbf{Conditional independence:} $\tilde{X} \perp\!\!\!\perp Y \mid X$.
+\end{itemize}
+
+A test statistic $W_j$ compares the importance of each original variable $X_j$ against its knockoff $\tilde{X}_j$. A variable is selected only if its importance significantly exceeds that of its knockoff, while the procedure rigorously controls the FDR:
+\[
+\text{FDR} = \mathbb{E} \left[ \frac{|\{j : j \in \hat{S} \cap H_0 \}|}{|\{j : j \in \hat{S} \}|} \right],
+\]
+where $\hat{S}$ is the set of selected variables and $H_0$ is the set of null (non-informative) variables.
+
+Applied to EMIT spectra, knockoffs identify key wavelengths that carry mineralogical information while filtering out redundant or noisy bands. This provides a complementary perspective to the attention-derived band importance rankings from the transformer in Part~II: knockoffs select bands through statistical hypothesis testing with FDR control, while attention weights emerge from discriminative learning. Comparing the two band sets validates whether the transformer's learned spectral focus aligns with statistically principled feature selection.
+
+\section{KNN for Missing Data Imputation}
+
+% TODO: KNN approach for fill value handling and spatial gap-filling
+
+
+% ######################################################################
+% CHAPTER 6: PREDICTION RESULTS (PART I)
+% ######################################################################
+\chapter{Prediction Methods and Results}
+\label{chap:part1_results}
+
+\section{Nonparametric Conditional Expectation}
+
+For each spatial aggregation level, the goal is to predict the conditional expectation of $\mathbf{Q}$, denoted by $\bar{\mathbf{Q}} = E[\mathbf{Q} | \mathbf{W} = \mathbf{w}_0]$. This is achieved using a nonparametric Gaussian kernel regression method \cite{ghanem2018}:
+\begin{equation}
+E\{\mathbf{Q}|\mathbf{W} = \mathbf{w}_0\} \approx \frac{\sum_{\ell=1}^{\nu_{\text{sim}}} \mathbf{q}^\ell \exp\left(-\frac{1}{2s^2}\|\mathbf{w}^\ell - \mathbf{w}_0\|^2\right)}{\sum_{\ell=1}^{\nu_{\text{sim}}} \exp\left(-\frac{1}{2s^2}\|\mathbf{w}^\ell - \mathbf{w}_0\|^2\right)},
+\label{eq:cond_exp}
+\end{equation}
+where $s$ is the bandwidth parameter and $\nu_{\text{sim}}$ is the number of samples (original plus PLoM-generated).
+
+\section{Random Forest Classification}
+
+% TODO: Random forest approach and results for mineral ID
+
+\section{Pixel-Level Predictions}
+
+Pixel samples ($N_p = 10{,}000$) were randomly selected from the available EMIT hyperspectral observations for training. The feature matrix $\mathbf{W} \in \R^{10{,}000 \times 285}$ consists of EMIT-measured radiance across 285 bands. The QoIs, $\mathbf{Q} \in \R^{10{,}000 \times 2}$, represent the fractional abundances of Group~1 and Group~2 minerals (banddepth) and their mineral IDs.
+
+% TODO: Pixel-level prediction results and figures
+
+\section{Full-Image Prediction}
+\label{sec:fullimage}
+
+Instead of aggregating predictions pixel-by-pixel, this approach operates on full EMIT granules, retaining only the principal components of $\tilde{\mathbf{W}}_f$ and $\tilde{\mathbf{Q}}_f$ to predict mineral abundance for every pixel in the scene simultaneously. This method captures important contextual information across adjacent pixels and is computationally efficient at inference time.
+
+With the PLoM-augmented dataset, nonparametric conditional expectation is used in the latent PCA space to estimate $E[\tilde{\mathbf{Q}}_f | \tilde{\mathbf{W}}_f = \mathbf{w}_0]$. The estimated $\tilde{\mathbf{Q}}_f$ is then mapped back to the original space, producing full-scene estimates of expected mineral abundances $\bar{\mathbf{Q}}_f$.
+
+Using nonparametric conditional expectation, post-training, a full Level~2 mineralogical map ($\bar{\mathbf{Q}}$) can be generated in milliseconds (full-scene approach) when provided new Level~1B EMIT reflectance observations. In contrast, the pixel-by-pixel approach reconstructs an image within approximately one hour.
+
+% TODO: Full-scene prediction figures and quantitative results
+
+\section{Pixel-Level vs Full-Image Comparison}
+
+% TODO: RAE comparison table, visual comparison figure
+% TODO: Computational performance comparison
+
+\section{What Part~I Achieves and Where It Falls Short}
+\label{sec:part1_limitations}
+
+Part~I demonstrates that the RTM-bypass paradigm is viable: both pixel-level and full-scene prediction significantly reduce computational demands while producing reliable mineral maps. The full-scene approach is particularly compelling, generating complete Level~2 products in milliseconds.
+
+However, several limitations motivate the development of Part~II:
+\begin{itemize}
+  \item \textbf{No spectral interpretability:} The PCA+conditional expectation pipeline treats spectra as generic high-dimensional vectors. There is no mechanism to determine which spectral bands drive classification decisions.
+  \item \textbf{Limited mineral ID accuracy:} While banddepth prediction is strong, fine-grained Group~1 mineral identification (95 classes) remains challenging with conditional expectation alone.
+  \item \textbf{Data augmentation required:} The full-scene approach requires PLoM augmentation because the mapping is generic and data-hungry. A model that learns spectral structure directly may require less augmentation.
+  \item \textbf{No physics injection:} The statistical methods do not incorporate domain knowledge about mineral absorption features, water vapor bands, or atmospheric effects.
+\end{itemize}
+
+These limitations raise the question: \emph{can a model that learns spectral structure directly --- and incorporates physics-informed priors --- improve mineral ID accuracy while providing interpretable evidence of which bands matter?}
+
+
+% ######################################################################
+% PART II: PHYSICS-INFORMED TRANSFORMER ARCHITECTURE
+% ######################################################################
+\part{Physics-Informed Transformer Architecture}
+\label{part:transformer}
+
+
+% ######################################################################
+% CHAPTER 7: TRANSFORMER ARCHITECTURE
+% ######################################################################
+\chapter{Transformer-Based Multi-Head Attention Pooling}
+\label{chap:transformer}
+
+This chapter introduces a cross-attention transformer architecture for per-pixel mineral classification from EMIT L1B TOA reflectance. Unlike the statistical methods of Part~I, which treat spectra as generic high-dimensional vectors, the transformer learns spectral structure through attention --- automatically discovering which wavelengths are most informative for each mineral class.
+
+\section{Related Work: Spectral Transformers for Hyperspectral Analysis}
+
+The application of transformer architectures to hyperspectral image (HSI) analysis has emerged as the most actively cited subfield in contemporary remote sensing research. This section surveys the key architectures, positions the present work within the literature, and identifies a gap that this dissertation addresses.
+
+\subsection{The Curse of Dimensionality in Hyperspectral Imaging}
+
+Hyperspectral imaging systems record the electromagnetic spectrum across hundreds of narrow, contiguous bands, producing a continuous spectral signature that encodes the physical and chemical properties of the materials within each pixel. However, this informational density introduces the Hughes phenomenon (curse of dimensionality): as the number of spectral bands increases, the volume of the feature space expands exponentially, requiring a disproportionately large number of labeled training samples for statistical convergence. For EMIT's 285 bands across 95 mineral classes, this is particularly acute --- the ratio of feature dimensions to class count demands either massive training sets or architectures with strong inductive biases that constrain the hypothesis space.
+
+Furthermore, because transformers are permutation-invariant --- they do not inherently understand the order of tokens --- positional encodings must be injected to convey the continuous, ordered nature of electromagnetic wavelengths. This ensures the model understands that adjacent spectral bands are physically proximate, a property that differentiates spectral sequences from unstructured token sets in NLP. The architecture in this dissertation addresses this through learnable band-position embeddings concatenated with spectral content (Section~\ref{chap:transformer}).
+
+\subsection{From CNNs to Transformers}
+
+For decades, shallow classifiers such as SVMs and random forests, paired with dimensionality reduction (PCA, LDA), formed the standard HSI pipeline. Deep learning brought 1D, 2D, and 3D convolutional neural networks (CNNs) that model local spatial-spectral correlations \cite{hong2021spectralformer}. 3D-CNNs demonstrated efficacy in modeling local spatial-spectral correlations by sliding geometric kernels across the three-dimensional data cube. However, CNNs are fundamentally limited by the inductive bias of their localized receptive fields: in hyperspectral mineral analysis, discriminative absorption features are distributed across distant, non-adjacent wavelengths (e.g., Fe$^{3+}$ charge transfer at $\sim$530~nm and crystal field transitions at $\sim$860~nm). A standard convolutional kernel cannot model these long-range dependencies without prohibitive network depth, which leads to gradient degradation, loss of fine-grained spectral detail, and massive computational overhead.
+
+The Transformer architecture \cite{vaswani2017attention}, originally designed for natural language processing, provided a revolutionary alternative. By abandoning localized convolutions in favor of the multi-head self-attention (MHSA) mechanism, transformers evaluate the global dependencies of all input tokens simultaneously. When translated to hyperspectral imaging, spectral bands or spatial patches are treated as sequential tokens, and the attention matrix dynamically weighs the significance of every band relative to all others, theoretically achieving an infinite receptive field in a single layer. However, early adaptations that flattened the entire hyperspectral cube into a 1D sequence produced a sequence length $L = H \times W \times B$ with computational complexity $O(L^2)$, rendering pure self-attention intractable for standard remote sensing imagery containing millions of pixels. The evolution of spectral transformers has consequently been defined by the pursuit of efficient tokenization strategies, spatial-spectral decoupling, and hybrid CNN-Transformer architectures that balance computational feasibility with the theoretical advantages of global attention.
+
+\subsection{Foundational Academic Architectures}
+
+Table~\ref{tab:spectral_transformers} summarizes the most highly cited spectral transformer architectures.
+
+\begin{table}[htbp]
+\centering
+\caption{Foundational spectral transformer architectures for hyperspectral classification.}
+\label{tab:spectral_transformers}
+\begin{tabular}{llll}
+\hline
+\textbf{Model} & \textbf{Core Innovation} & \textbf{Primary Focus} & \textbf{Citation Impact} \\
+\hline
+SpectralFormer \cite{hong2021spectralformer} & Group-wise spectral embedding; & Pixel/patch spectral & $\sim$1,790+ citations; \\
+ & cross-layer adaptive fusion & sequencing & standard baseline \\
+SSFTT \cite{sun2022ssftt} & 3D/2D CNN + Gaussian-weighted & Lightweight hybrid & Standardized CNN- \\
+ & tokenizer & classification & Transformer pipeline \\
+SSTN \cite{zhong2021sstn} & Factorized spatial/spectral & Data-efficient & Proved spatial and spectral \\
+ & attention modules & classification & attention must decouple \\
+HSI-BERT \cite{he2020hsibert} & Bidirectional sequence modeling & Deep contextual & Pioneered NLP-to- \\
+ & of spectral bands & feature extraction & spectroscopy translation \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{SpectralFormer} \cite{hong2021spectralformer} treats the spectral dimension as a pure sequence and introduces group-wise spectral embedding (GSE), which groups adjacent bands into tokens to reduce the $O(L^2)$ complexity of full self-attention while preserving local spectral continuity. Its cross-layer adaptive fusion (CAF) module maintains skip connections between transformer layers, preventing the loss of subtle narrow absorption features during deeper abstraction. SpectralFormer has become the default backbone for HSI classification benchmarks.
+
+\textbf{SSFTT} \cite{sun2022ssftt} recognized that the inductive bias of CNNs for local texture extraction remains valuable. It processes the 3D data cube with a lightweight 3D CNN followed by a 2D CNN, then applies Gaussian-weighted tokenization that emphasizes center-pixel features and suppresses peripheral noise before feeding the condensed tokens into a transformer encoder. This hybrid approach achieves state-of-the-art accuracy with significantly fewer FLOPs than pure transformer architectures.
+
+\textbf{SSTN} \cite{zhong2021sstn} factorizes attention into parallel spatial and spectral modules using a Factorized Architecture Search (FAS) framework. Spatial attention captures pixel interactions regardless of distance, while the spectral correlation module identifies co-varying wavelengths. This bipartite factorization explicitly acknowledges that spatial similarity and spectral correlation follow different physical rules and should not be fused prematurely.
+
+\textbf{HSI-BERT} \cite{he2020hsibert} translates bidirectional encoder representations from NLP to spectroscopy, treating spectral bands as semantic ``words.'' The bidirectional context captures absorption features that only become interpretable when viewed alongside both shorter and longer wavelengths, proving effective against the curse of dimensionality without extensive manual feature engineering.
+
+\paragraph{Benchmark limitations.}
+These architectures are evaluated on legacy datasets captured by NASA JPL and European sensors --- most notably Indian Pines and Salinas Valley (AVIRIS), Pavia University, and the Houston dataset --- which present distinct challenges: mixed agricultural pixels, urban structural geometry, and limited spatial extent. However, these benchmark datasets differ fundamentally from operational EMIT mineral classification in several respects: they contain fewer spectral bands (typically 103--224 vs.\ EMIT's 285), far fewer classes (9--16 vs.\ 95 Group~1 minerals), and operate on pre-processed surface reflectance rather than TOA reflectance contaminated by atmospheric absorption. Performance on benchmark datasets therefore does not directly predict performance on the mineral classification task addressed in this dissertation.
+
+\subsection{Mineralogical Implications of Spectral Transformers}
+
+In the context of mineral identification, spectral transformers must resolve minute changes in crystalline structure encoded in VSWIR absorption features. A critical example is the iron oxide weathering sequence: pyrite (FeS$_2$) weathers to jarosite, then goethite, and finally hematite, each exhibiting unique absorption features. Traditional spectral matching algorithms often blur these continuous transitions due to spatial averaging and spectral confusion (Section~\ref{tab:unmixing}). The hematite--goethite discrimination is particularly demanding because both minerals share overlapping Fe$^{3+}$ crystal field absorption features near 860--920~nm, differing primarily in band shape and the position of a secondary feature near 480~nm (goethite) vs.\ 530~nm (hematite) \cite{clark1999,sherman1985}. Spectral transformers, by evaluating all bands simultaneously through attention, can in principle capture these subtle spectral differences --- but only if the attention mechanism learns to focus on the correct diagnostic wavelengths. The per-head attention analysis in Chapter~\ref{chap:ablation} directly tests whether this occurs.
+
+\subsection{NASA JPL Applied Architectures}
+
+While the academic architectures above define benchmarks on standard datasets (Indian Pines, Pavia University, Houston), NASA JPL has produced highly impactful applied spectral transformers targeting mission-critical Earth science:
+
+\textbf{MethaneMapper} \cite{kumar2023methanemapper} is a spectral absorption-aware hyperspectral transformer for methane plume detection. Rather than relying on spatial morphology (which confuses plume shapes with unrelated ground features), its multi-head attention is explicitly guided to attend to the SWIR wavelengths (2200--2400~nm) where CH$_4$ absorbs. The attention matrix acts as a dynamic matched filter, amplifying subtle absorption signals while suppressing spectral clutter. Applied to AVIRIS-NG data from Permian Basin campaigns, MethaneMapper detects emission rates as low as 50~kg/hr from high-altitude platforms.
+
+\textbf{SpecTf} \cite{lee2025spectf} is a pure 1D spectral sequence model for cloud detection, developed for the EMIT instrument and published in PNAS in 2025. SpecTf completely abandons spatial context, treating each pixel's spectrum as a discrete sampling of a continuous physical function. Three aspects are particularly relevant to this dissertation:
+\begin{enumerate}
+  \item \textbf{Inherent interpretability:} Attention weights reveal that the transformer independently learned physically meaningful patterns---attending to water vapor absorption bands and Rayleigh scattering slopes---without explicit physical programming, paralleling the spectroscopic validation approach used in Chapter~\ref{chap:ablation}.
+  \item \textbf{Spatial bias as liability:} SpecTf demonstrates that for tasks where phenomena are encoded in the spectrum, spatial context introduces bias rather than benefit. This supports the per-pixel spectral approach adopted in this dissertation.
+  \item \textbf{Cross-instrument generalization:} By treating input as a variable-length sequence, SpecTf transfers from EMIT to other instruments without retraining, establishing the framework for instrument-agnostic spectroscopic algorithms.
+\end{enumerate}
+
+\subsection{Emerging Directions}
+
+Three trajectories in the spectral transformer literature are relevant to the present work:
+
+\paragraph{Spectral supremacy over spatial-spectral fusion.}
+For years, the foundational assumption in HSI deep learning was that spatial-spectral fusion --- combining neighborhood structure with spectral signatures --- was universally superior to purely spectral analysis. Early models (SSFTT, SSTN) operated heavily on this paradigm. However, recent NASA JPL work, particularly SpecTf, indicates that for purely physical classification tasks (mineral identification, cloud detection, trace gas quantification), spatial context can be an active liability: models that learn spatial relationships encode \emph{where} a phenomenon usually occurs rather than \emph{what} it physically is. This dissertation adopts a per-pixel spectral approach consistent with this finding.
+
+\paragraph{Foundation models and cross-instrument generalization.}
+The concept of universal spectroscopic foundation models --- massive pre-trained transformers fine-tuned for downstream tasks --- is emerging via frameworks like SpectralEarth and HyperspectralViTs. The critical enabler is the transformer's ability to process variable-length sequences: a spectrum of 224 bands (AVIRIS) or 285 bands (EMIT) can be handled by the same architecture, unlike CNNs whose input layers require fixed tensor dimensions. While this dissertation does not pursue pre-training at scale, the cross-attention architecture with learned query vectors is inherently compatible with variable band counts, supporting future cross-instrument transfer.
+
+\paragraph{Computational efficiency and onboard processing.}
+The $O(L^2)$ complexity of full self-attention remains a hurdle for operational deployment. State-Space Models (SSMs) like Mamba offer linear scaling with sequence length while maintaining global contextual awareness. Meanwhile, space agencies are researching onboard deployment of lightweight spectral transformers on FPGAs, enabling satellites to discard useless data (e.g., cloudy pixels) and transmit only actionable intelligence. The cross-attention architecture in this dissertation, with $O(H \times L)$ complexity, is already within the computational envelope required for such deployment scenarios.
+
+\subsection{Gap: No RTM-Bypass via Spectral Transformers}
+
+A critical observation emerges from the literature: \emph{all existing spectral transformer architectures operate on atmospherically corrected surface reflectance or target atmospheric phenomena (clouds, methane) rather than surface mineralogy from uncorrected observations}. SpectralFormer, SSFTT, SSTN, and HSI-BERT are benchmarked on pre-processed datasets where atmospheric effects have already been removed. MethaneMapper detects an atmospheric constituent. SpecTf detects clouds. None bypass the radiative transfer model to classify surface minerals directly from L1B TOA reflectance.
+
+This dissertation addresses this gap. The architecture presented below is, to the author's knowledge, the first spectral transformer applied to mineral classification from TOA reflectance without atmospheric correction. The cross-attention design with physics-informed PCA priors enables the model to learn mineral features in the presence of atmospheric interference, while the per-head attention analysis provides spectroscopic validation that the learned representations correspond to known diagnostic absorption bands rather than atmospheric artifacts.
+
+\section{Architecture Motivation}
+
+The transformer addresses the limitations identified in Section~\ref{sec:part1_limitations}:
+\begin{itemize}
+  \item \textbf{Spectral interpretability:} Attention weights $A_{h,j}$ provide per-band, per-head, per-class importance scores as a direct output of the forward pass.
+  \item \textbf{Global spectral context:} Unlike 1D-CNNs with local receptive fields, cross-attention evaluates all 285 bands simultaneously, enabling long-range spectral dependencies.
+  \item \textbf{Linear complexity:} Using learned queries rather than self-attention reduces complexity from $O(L^2)$ to $O(H \times L)$, where $H$ is the number of attention heads and $L = 285$ is the number of bands.
+  \item \textbf{Physics injection interface:} The attention bias $\boldsymbol{\beta}_{h,j}$ provides a clean mechanism for incorporating domain knowledge without changing the architecture.
+\end{itemize}
+
+\section{Data Preprocessing and Robust Normalization}
+
+Let $\mathbf{W}_p \in \R^{N \times L}$ be the raw TOA reflectance data. Robust median-IQR normalization is applied per band, computed on the training split only:
+\[
+\hat{w}_{p,\lambda} = \frac{w_{p,\lambda} - \tilde{\mu}_\lambda}{\sigma_{IQR,\lambda} + \epsilon},
+\]
+where $\tilde{\mu}_\lambda$ is the median reflectance and $\sigma_{IQR,\lambda}$ is the interquartile range. Labels are shifted from 1..95 to 0..94 with zero-class filtered. Data is split 90/10 train/validation.
+
+\section{Shape-Aware Tokenization}
+
+Each spectral band is converted into a token encoding reflectance value, slope, and curvature:
+\[
+\mathbf{u}_j = [\hat{w}_j, \; \Delta\hat{w}_j, \; \Delta^2\hat{w}_j]^T \in \R^3,
+\]
+where $\Delta\hat{w}_j = \hat{w}_j - \hat{w}_{j-1}$ and $\Delta^2\hat{w}_j = \Delta\hat{w}_{j+1} - \Delta\hat{w}_j$. The model fuses content (reflectance + derivatives projected to $\R^{96}$) with positional encoding (learnable band embedding in $\R^{96}$) through concatenation and a mixing matrix:
+\[
+\mathbf{e}_j = \text{LayerNorm}\left(\mathbf{W}_{in}\left[\text{Linear}(\mathbf{u}_j) \oplus \text{Emb}_{pos}(j)\right]\right) \in \R^{192}.
+\]
+
+\section{Cross-Attention Backbone}
+
+The input embeddings are projected into Key and Value spaces ($\mathbf{K} = \mathbf{E}_{final}\mathbf{W}_K$, $\mathbf{V} = \mathbf{E}_{final}\mathbf{W}_V$). For $H$ attention heads with learnable query vectors $\mathbf{q}_h \in \R^d$:
+\begin{align}
+s_{h,j} &= \frac{\mathbf{q}_h \cdot \mathbf{K}_j}{\sqrt{d}} + \boldsymbol{\beta}_{h,j}, \\
+A_{h,j} &= \text{Softmax}\left(\frac{s_{h,j}}{\tau}\right), \\
+\mathbf{z}_h &= \sum_{j=1}^{L} A_{h,j} \mathbf{V}_j.
+\end{align}
+
+In r14, this is implemented via \texttt{torch.einsum} rather than a Python loop over heads, producing a 30\% speedup over r13 and scaling sub-linearly with head count.
+
+\section{Classification Head}
+
+Head outputs are concatenated ($\mathbf{z}_{cat} = [\mathbf{z}_1, \ldots, \mathbf{z}_H] \in \R^{H \cdot d}$) and passed through a 2-layer MLP:
+\begin{align}
+\mathbf{f} &= \text{ReLU}(\mathbf{W}_1 \cdot \text{ReLU}(\mathbf{z}_{cat}) + \mathbf{b}_1), \\
+\text{logits} &= \mathbf{W}_2(\text{Dropout}(\mathbf{f})) + \mathbf{b}_2 \in \R^{Q_1}.
+\end{align}
+
+\section{Optimization}
+
+Cross-entropy loss with optional label smoothing ($\epsilon_{ls}$), AdamW optimizer with separate parameter groups (weight decay = 0 for attention bias), and optional cosine LR schedule with 5\% warmup.
+
+
+% ######################################################################
+% CHAPTER 8: PHYSICS-INFORMED PRIORS AND LUSI
+% ######################################################################
+\chapter{Physics-Informed Spectral Priors and Statistical Invariants}
+\label{chap:physics}
+
+\section{PCA-Derived Attention Bias from USGS Reference Spectra}
+
+The attention bias $\boldsymbol{\beta}_{h,j}$ is initialized from PCA on 93 USGS Spectral Library Group~1 reference spectra convolved to EMIT’s 285 bands. The bias vector for each head is the z-scored absolute eigenvector:
+\[
+\mathbf{b}_h = \frac{|\mathbf{v}_h| - \mu_{|\mathbf{v}_h|}}{\sigma_{|\mathbf{v}_h|}}, \quad \boldsymbol{\beta}_h^{(0)} = \alpha \cdot \mathbf{b}_h.
+\]
+
+\section{Continuum Removal vs Raw Reflectance PCA}
+
+A key empirical finding is that PCA on raw reflectance (without standard continuum removal preprocessing) achieves the best classification accuracy. Continuum removal introduces a representation mismatch: eigenvectors computed in absorption-depth space do not align with the TOA reflectance domain that the model operates in. The no-continuum PCA 8-head configuration achieves 82.1\% top-1 accuracy, compared to 80.5\% with continuum removal.
+
+\section{Water Vapor Band Masking}
+
+Bands at $\sim$1.4~$\mu$m, $\sim$1.9~$\mu$m, and $>$2450~nm are zeroed in the PCA prior after computation. Without this mask, prior evolution analysis shows that 6/8 heads spend their maximum drift suppressing atmospheric H$_2$O bands rather than learning mineral features.
+
+\section{Hybrid Head Allocation and Freeze Schedule}
+
+For $H = 8$ heads with $k = 4$ PCA components, heads 0--3 are initialized from PCA (frozen for 3 epochs, then fine-tuned) while heads 4--7 start near zero and learn freely. This allows the classification head to first learn around the physics priors before they are allowed to drift.
+
+\section{LUSI Consistency Regularization}
+
+\subsection{Theoretical Foundation: Complete Statistical Learning}
+
+The Learning Using Statistical Invariants (LUSI) framework is grounded in the complete statistical theory of learning introduced by Vapnik and Izmailov \cite{vapnik2020}, which incorporates both strong and weak convergence modes in Hilbert space. The key insight is that \emph{predicates} and \emph{statistical invariants} can constrain the admissible set of functions, embedding prior knowledge into the learning process.
+
+\paragraph{Predicates.}
+Predicates are a finite set of functions $\phi_s(x)$, $s = 1, \ldots, m$, that encode expected properties or symmetries in the data. For a given probability distribution $P(x, y)$, predicates satisfy:
+\[
+\int \phi_s(x) P(y = 1 | x) \, dP(x) = \int \phi_s(x) \, dP(y = 1, x), \quad s = 1, \ldots, m.
+\]
+As the number of predicates increases, the VC dimension of the admissible set decreases, providing tighter generalization bounds.
+
+\paragraph{Statistical Invariants.}
+Statistical invariants are the constraints derived from predicates: any function $f(x)$ in the admissible set must satisfy:
+\[
+\int \phi_s(x) f(x) \, dP(x) = a_s, \quad s = 1, \ldots, m,
+\]
+where $a_s$ is the known value derived from training data. In practice, $P(x)$ and $P(y = 1 | x)$ are replaced by their empirical counterparts:
+\[
+\frac{1}{l} \sum_{i=1}^l \phi_s(x_i) f(x_i) = \frac{1}{l} \sum_{i=1}^l y_i \phi_s(x_i), \quad s = 1, \ldots, m.
+\]
+
+\paragraph{RKHS Solution.}
+In a Reproducing Kernel Hilbert Space (RKHS) with kernel $K(x, x’)$, the conditional probability function $f(x) = \psi(x) + c$ is found by minimizing:
+\[
+R(A) = (K \mathbf{A} + c \mathbf{1}_l - \mathbf{Y})^T V (K \mathbf{A} + c \mathbf{1}_l - \mathbf{Y}),
+\]
+subject to the invariant constraints $\Phi_s^T K \mathbf{A} + c \Phi_s^T \mathbf{1}_l = \Phi_s^T \mathbf{Y}$ and the norm constraint $\mathbf{A}^T K \mathbf{A} = B$. The Lagrangian yields the solution $\mathbf{A} = \mathbf{A}_V - c \mathbf{A}_c - \sum_{k=1}^m \mu_k \mathbf{A}_s$, giving $f(x) = \mathbf{A}^T K(x) + c$.
+
+\subsection{Application to Mineral Classification}
+
+Inspired by this theoretical framework, the LUSI regularization in this work enforces that mineral classification is invariant to illumination scaling and atmospheric slope perturbation. Each training spectrum is augmented with $T_{joint}(\mathbf{w}) = \alpha \mathbf{w} + \beta \cdot \boldsymbol{\lambda}_{grid}$, where $\alpha \sim \mathcal{U}(0.8, 1.2)$ and $\beta \sim \mathcal{N}(0, 0.01)$. The KL divergence between clean and augmented predictions is added to the cross-entropy loss:
+\[
+\mathcal{L}_{total} = \mathcal{L}_{CE} + \lambda_{LUSI} \cdot D_{KL}\left(P_\tau(\mathbf{q}|\mathbf{w}) \| P_\tau(\mathbf{q}|T_{joint}(\mathbf{w}))\right) \cdot \tau^2.
+\]
+
+\section{Prior Evolution Analysis}
+
+The attention bias $\boldsymbol{\beta}_{h,j}$ is logged at every epoch to track how priors drift during training. This enables detection of water vapor suppression, identification of which heads refine versus override their initialization, and quantification of the mask’s effect on redirecting learning capacity.
+
+
+% ######################################################################
+% CHAPTER 9: ABLATION AND ATTENTION ANALYSIS
+% ######################################################################
+\chapter{Ablation Study and Spectral Attention Analysis}
+\label{chap:ablation}
+
+\section{Full Ablation Results}
+
+\begin{table}[htbp]
+\centering
+\caption{Complete ablation results (r14, 120 epochs, $\sim$1M training pixels).}
+\label{tab:ablation}
+\begin{tabular}{lccccc}
+\hline
+\textbf{Configuration} & \textbf{Heads (PCA/Total)} & \textbf{Top-1} & \textbf{Top-3} & \textbf{Time (min)} \\
+\hline
+Transformer only & 4 & 0.791 & 0.962 & 117 \\
+\textbf{Transformer only} & \textbf{8} & \textbf{0.813} & \textbf{0.968} & \textbf{136} \\
+PCA (continuum) & 4/4 & 0.804 & 0.966 & 141 \\
+PCA (no continuum) & 4/4 & 0.810 & 0.967 & --- \\
+PCA (continuum) & 4/8 & 0.806 & 0.966 & 127 \\
+\textbf{PCA (no continuum)} & \textbf{8/8} & \textbf{0.821} & \textbf{0.971} & \textbf{---} \\
+LUSI only & 4 & 0.787 & 0.961 & 269 \\
+LUSI only & 8 & 0.796 & 0.963 & 293 \\
+PCA + LUSI & 4/8 & 0.805 & 0.965 & 311 \\
+\hline
+\end{tabular}
+\end{table}
+
+Best result: PCA 8/8H no-continuum (0.821). PCA on raw reflectance breaks through the continuum-removed PCA ceiling ($\sim$0.806). LUSI hurts accuracy in every configuration and roughly doubles training time.
+
+\section{Per-Head Attention Validation Against Diagnostic Bands}
+
+Known diagnostic absorption features for hematite (Fe$^{3+}$) include charge transfer at $\sim$530~nm, crystal field transitions at $\sim$670~nm and $\sim$860~nm \cite{clark1999,burns1993,sherman1985}. Per-head attention analysis reveals that the model independently discovers these features:
+
+\begin{itemize}
+  \item \textbf{Head 2} (PCA 8H+mask): top-5 peaks at 544, 537, 530, 470, 873~nm --- matching hematite diagnostic at $\sim$530/860~nm within $\pm$20~nm.
+  \item \textbf{Head 7} (Transformer 8H): 679~nm --- matching the Fe$^{3+}$ $^6A_1 \rightarrow {}^4T_2$ transition at $\sim$670~nm. This feature was NOT found by any PCA configuration.
+\end{itemize}
+
+\section{Spearman Correlation and Peak Coincidence}
+
+Two complementary validation metrics are employed: Spearman rank correlation (rewards broad spectral agreement) and peak coincidence within $\pm$20~nm of literature values (rewards sharp diagnostic band targeting). PCA-initialized heads show high peak coincidence but near-zero Spearman correlation, while unconstrained transformer heads show the reverse --- reflecting fundamentally different attention strategies that are both spectroscopically valid.
+
+\section{Key Findings}
+
+\begin{enumerate}
+  \item Physics priors don’t change what the model \emph{can} learn, but they change what it \emph{does} learn --- and when the prior representation matches the input domain (raw reflectance, not continuum-removed), they improve accuracy beyond what the unconstrained model achieves.
+  \item The water vapor mask redirects learning from atmospheric correction toward mineral discrimination.
+  \item LUSI does not improve accuracy on the training distribution but is the only configuration that maintains or improves performance on geographically independent test scenes.
+  \item The transformer independently discovers spectroscopically valid Fe$^{3+}$ absorption features regardless of initialization, confirming that learned representations are physically meaningful.
+\end{enumerate}
+
+
+% ######################################################################
+% CHAPTER 10: GENERALIZATION
+% ######################################################################
+\chapter{Generalization and Cross-Platform Analysis}
+\label{chap:generalization}
+
+\section{Cross-Region Generalization}
+
+Models trained on Africa/Middle East desert regions were evaluated on a geographically independent southwestern US desert scene:
+
+\begin{table}[htbp]
+\centering
+\caption{Cross-scene generalization (8-head configurations, no continuum).}
+\label{tab:crossscene}
+\begin{tabular}{lccc}
+\hline
+\textbf{Model} & \textbf{Train region} & \textbf{SW US (new)} & \textbf{Change} \\
+\hline
+LUSI 8H & 0.901 & 0.927 & +2.6\% \\
+Transformer 8H & 0.917 & 0.900 & $-$1.7\% \\
+PCA 8H nocont & 0.917 & 0.859 & $-$5.8\% \\
+\hline
+\end{tabular}
+\end{table}
+
+LUSI is the only model that improves on the new scene, consistent with Vapnik’s theory that statistical invariants provide the greatest benefit when test conditions differ from training. PCA degrades most due to region-specific priors.
+
+\section{Comparison: Part~I vs Part~II Generalization}
+
+% TODO: Compare P2C pipeline generalization with transformer generalization
+
+\section{Full-Image Inference}
+
+The trained transformer model is applied at the full image granule level, classifying entire EMIT scenes in a single inference pass rather than relying on pixel-by-pixel retrieval through the traditional RTM pipeline.
+
+% TODO: Full-image inference results and timing
+
+\section{Extensibility to PACE}
+\label{sec:pace}
+
+The sensor-agnostic RTM-bypass paradigm developed for EMIT has been demonstrated on a fundamentally different remote sensing problem: predicting aerosol volume density from NASA’s Plankton, Aerosol, Cloud, ocean Ecosystem (PACE) mission. This demonstrates that the statistical learning methods of Part~I generalize beyond mineral classification to atmospheric retrieval.
+
+\subsection{PACE Mission and HARP2 Instrument}
+
+The PACE mission seeks to deepen our understanding of global ocean biology, biogeochemistry, and ecology, while also advancing atmospheric and climate research. Central to this mission is the HARP2 multi-angle polarimeter, operating in four spectral bands (440, 550, 670, and 870~nm) across 90 viewing angles ranging from $-60^{\circ}$ to $60^{\circ}$, at 2.6~km spatial resolution. Each HARP2 data file is represented as a 3D data cube with dimensions $395 \times 519$ pixels across the 90 viewing angles.
+
+\subsection{PACE Data and Problem Formulation}
+
+The dataset consists of 149 consecutive five-minute simulated L1c HARP2 observation files, representing approximately 12 hours of continuous observations. Corresponding aerosol datasets are generated using the FASTMAPOL model. The feature set $\mathbf{W}$ includes the full 90-view i-stokes vector, degree of linear polarization (DOLP across all 90 views), solar zenith angle (for all 90 views), surface pressure, aerosol layer height, and wind speed. The QoIs $\mathbf{Q}$ are fine and coarse-scale aerosol volume density. As with EMIT, the goal is to bypass the computationally expensive retrieval algorithms by learning a direct mapping from $\mathbf{W}$ to $\mathbf{Q}$ using the joint probability density function $p_{W,Q}(w_0,q)$, estimated via Gaussian kernel-density estimation.
+
+\subsection{Pixel-Level Predictions}
+
+Pixel samples ($N = 30{,}000$) were randomly selected from the 149 simulated scenes. The feature matrix $\mathbf{W} \in \R^{30{,}000 \times 273}$ consists of the HARP2 observations and ancillary features. Nonparametric conditional expectation is used to obtain pixel-level expectations of fine and coarse volume density from a construction of $p_{Q|W}(q)$.
+
+\subsection{Full-Scene Predictions}
+
+Prediction of aerosol volume density for a full $395 \times 519$ pixel scene presents a high-dimensional problem: flattening one scene for one view yields 205,005 dimensions, and with 90 HARP2 views, the total feature dimension approaches 56~million. PCA is applied per view per feature:
+\[
+\text{PCA}(\mathbf{W}_{ij}) = \tilde{\mathbf{W}}_{ij} \quad \text{for each } i = 1, \ldots, 90 \text{ and } j = 1, \ldots, 3,
+\]
+where $\tilde{\mathbf{W}}_{ij} \in \R^{99 \times d}$ retains 95\% of the variance. Similarly, PCA is applied to $\mathbf{Q} \in \R^{99 \times 205{,}005}$ and ancillary variables. The resulting joint matrix $\mathbf{X}_{\text{PCA}} = \{\tilde{\mathbf{W}}, \tilde{\mathbf{Q}}\} \in \R^{99 \times 4500}$.
+
+With only 99 uncorrupted full scenes available, PLoM is used to generate $N = 100{,}000$ synthetic scenes preserving the statistical properties of the original samples. The intrinsic manifold dimension for this problem is 85. Using the augmented dataset, nonparametric conditional expectation estimates $\tilde{\mathbf{Q}}$ in the latent PCA space, which is subsequently transformed back to the original space.
+
+\subsection{PACE Results and Implications}
+
+Both pixel-level and full-scene analyses, including sample generation and conditioning, complete within minutes for the stated sample sizes and dimensions, compared to the multi-day runtimes of high-fidelity radiative transfer models. The full-scene approach generates complete Level~2 aerosol maps in seconds after training.
+
+The successful application of the same PCA$+$PLoM$+$conditional expectation pipeline to both EMIT mineral classification and PACE aerosol retrieval confirms that the RTM-bypass paradigm is sensor-agnostic and domain-transferable. The key differences are the dimensionality of $\mathbf{W}$ (285 EMIT bands vs.\ $\sim$56M PACE features) and the nature of $\mathbf{Q}$ (discrete mineral classes vs.\ continuous volume density), yet the same statistical framework applies.
+
+
+% ######################################################################
+% CHAPTER 11: CONCLUSIONS
+% ######################################################################
+\chapter{Conclusions and Future Work}
+\label{chap:conclusions}
+
+\section{Summary of Contributions}
+
+This dissertation demonstrates two complementary implementations of the RTM-bypass paradigm for hyperspectral mineral classification:
+
+\begin{enumerate}
+  \item \textbf{Part~I:} A statistical learning pipeline using PCA, PLoM, conditional expectation, knockoffs, random forests, NMF, autoencoders, and KNN that predicts both mineral group banddepth and mineral ID at pixel and full-scene levels. The full-scene approach generates complete Level~2 mineral maps in milliseconds.
+
+  \item \textbf{Part~II:} A Transformer-based multi-head attention pooling architecture with physics-informed PCA priors and LUSI consistency regularization that classifies 95 mineral types from TOA reflectance with 82.1\% top-1 accuracy, while providing spectroscopically interpretable attention weights validated against known diagnostic absorption features.
+\end{enumerate}
+
+\section{Key Findings}
+
+\begin{enumerate}
+  \item The RTM can be bypassed for mineral classification from TOA reflectance without significant accuracy loss.
+  \item Per-head attention analysis confirms the model discovers spectroscopically valid features within $\pm$20~nm of literature values.
+  \item PCA priors on raw reflectance (without continuum removal) achieve the best accuracy, resolving a representation mismatch that limited prior configurations.
+  \item LUSI consistency regularization does not improve accuracy on the training distribution but uniquely improves cross-scene generalization.
+  \item The water vapor mask redirects model learning from atmospheric correction toward mineral discrimination.
+\end{enumerate}
+
+\section{Limitations}
+
+\begin{itemize}
+  \item Training labels are derived from the SDS pipeline (Tetracorder), creating a circular dependency for validation.
+  \item Cross-scene generalization has been tested on only one independent scene (SW US).
+  \item The LUSI augmentation uses a linear slope approximation for aerosol effects; real atmospheric scattering is nonlinear.
+  \item Full-image inference has not been systematically compared between Part~I and Part~II approaches.
+\end{itemize}
+
+\section{Future Work}
+
+\begin{itemize}
+  \item Independent validation using field-collected mineral samples or co-located AVIRIS-NG data.
+  \item Extension to Group~2 mineral classes (clays, carbonates, sulfates with SWIR diagnostic features).
+  \item Integration of Part~I (PLoM augmentation) with Part~II (transformer) for data-scarce scenarios.
+  \item Onboard or edge deployment for autonomous revisit decision support.
+  \item Systematic cross-scene evaluation across multiple geographic regions and atmospheric conditions.
+\end{itemize}
+
+% --- GLOSSARY (before Bibliography, per USC guidelines) ---
+\chapter*{Glossary}
+\addcontentsline{toc}{chapter}{Glossary}
+
+\begin{description}[leftmargin=3.5cm, style=nextline]
+  \item[EMIT] Earth Surface Mineral Dust Source Investigation --- NASA imaging spectrometer mission aboard the ISS
+  \item[Fe$^{3+}$] Ferric iron --- the oxidation state of iron in iron oxide minerals (hematite, goethite)
+  \item[FWHM] Full Width at Half Maximum --- spectral bandwidth of a sensor channel
+  \item[ISS] International Space Station
+  \item[ISDE] It\^{o} Stochastic Differential Equation
+  \item[KL Divergence] Kullback--Leibler Divergence --- information-theoretic measure of distance between probability distributions
+  \item[L1B] Level 1B --- calibrated at-sensor radiance or TOA reflectance data product
+  \item[L2B] Level 2B --- derived geophysical product (e.g., mineral identification)
+  \item[LUSI] Learning Using Statistical Invariants --- consistency regularization inspired by Vapnik's complete statistical learning theory
+  \item[KNN] K-Nearest Neighbors --- nonparametric method used for missing data imputation
+  \item[MLP] Multi-Layer Perceptron --- feedforward neural network
+  \item[MPS] Metal Performance Shaders --- Apple's GPU compute framework for PyTorch
+  \item[NMF] Non-Negative Matrix Factorization --- dimensionality reduction constraining factors to be non-negative
+  \item[NIR] Near Infrared --- approximately 0.7--1.0~$\mu$m
+  \item[PCA] Principal Component Analysis
+  \item[PLoM] Probabilistic Learning on Manifolds --- manifold-based data augmentation method
+  \item[RTM] Radiative Transfer Model --- physics-based simulation of electromagnetic radiation through the atmosphere
+  \item[SDS] Science Data System --- EMIT's operational data processing pipeline
+  \item[SWIR] Short-Wave Infrared --- approximately 1.0--2.5~$\mu$m
+  \item[TOA] Top of Atmosphere --- reflectance measured at the sensor, before atmospheric correction
+  \item[USGS] United States Geological Survey
+  \item[VNIR] Visible and Near Infrared --- approximately 0.4--1.0~$\mu$m
+  \item[VSWIR] Visible to Short-Wave Infrared --- approximately 0.4--2.5~$\mu$m
+\end{description}
+
+% --- BIBLIOGRAPHY (no chapter number per USC guidelines) ---
+\bibliographystyle{plain}
+\addcontentsline{toc}{chapter}{Bibliography}
+\bibliography{references}
+
+\end{document}

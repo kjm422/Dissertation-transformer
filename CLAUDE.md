@@ -131,6 +131,28 @@ Training outputs are in `Data/attn_outputs_{config}/`:
 - `Data/attn_outputs_PCALUSI4_8_diffcont_wts1/` — PCA+LUSI 4/8H (0.805)
 - `Data/attn_outputs_PCALUSI8_diffcont_wts1/` — r14 PCA+LUSI 8-head, derivatives, continuum, wv mask, lusi_weight=1
 
+## Dissertation Structure
+Two-part structure with shared intro/background (Chapters 1-3) and closing (Chapters 10-11):
+- **Part I (Chapters 4-6):** Statistical learning methods — PCA, NMF, autoencoder, PLoM, knockoffs, conditional expectation, random forest, KNN. Predicts both mineral group banddepth and mineral ID. Key contribution: full-image prediction in milliseconds.
+- **Part II (Chapters 7-9):** Physics-informed transformer — cross-attention backbone, PCA priors, LUSI, spectral derivatives. Predicts mineral ID only (95 Group 1 classes). Key contribution: spectroscopically interpretable attention validated against literature.
+- Unifying paradigm: RTM-bypass (collect small SDS-processed set → learn W→Q mapping → apply without RTM)
+- Both Parts are **post-hoc** methods: trained on L1B/L2B pairs already processed through EMIT SDS (ISOFIT + Tetracorder). No RTM at inference. Training quality bounded by SDS labels.
+- LaTeX source: `Disseratation_txt/dissertation.tex` with `references.bib`
+- USC formatting: 1" margins, double-spaced, Roman numeral prelim pages, Arabic body pages
+
+## Dissertation Chapters Status (as of 2026-03-28)
+
+Chapters with substantial content from literature integration:
+
+- **Ch 1:** EMIT pipeline bottlenecks (ISOFIT OE deficiencies, AOD masking, H2O biases, shadowing, soil fraction threshold)
+- **Ch 2:** Expanded background — data lifecycle, RTM emulation taxonomy (forward vs retrieval, in-line vs post-hoc), OE cost function, spatial paradigms (pixel/superpixel/full-image), Malsky transformer RT emulator, positioning table
+- **Ch 3:** Instrument specs table, Dyson design, vicarious calibration, geometric/radiometric performance table, spectral confusion/unmixing table
+- **Ch 5:** Knockoff feature selection math (exchangeability, FDR control)
+- **Ch 7:** Spectral transformer related work (SpectralFormer, SSFTT, SSTN, HSI-BERT table; MethaneMapper, SpecTf; Hughes phenomenon; mineralogical implications; emerging directions; RTM-bypass gap statement)
+- **Ch 8:** LUSI theoretical foundation (predicates, invariants, RKHS solution)
+- **Ch 10:** PACE extensibility (pixel-level, full-scene PCA+PLoM, results)
+- Chapters 4, 6, 9, 11 have skeleton/partial content with remaining TODOs
+
 ## Documentation
 Spectra_interrogationr2.ipynb contains three mathematical write-ups in markdown cells:
 1. **General Transformer Architecture** — Sections 1-8: preprocessing, tokenization, cross-attention backbone, classification head, optimization, monitoring, outputs
