@@ -17,6 +17,7 @@ Physics-informed transformer for hyperspectral mineral classification from EMIT 
 - Water vapor mask: `Spectra/group1_all/water_vapor_mask_285.npy`
 - EMIT wavelengths: `Data/emit_wavelength_centers_nm.npy`
 - Mineral grouping matrix: `Data/mineral_grouping_matrix_20230503.csv` (293 entries, Group 1 = 95, Group 2 = 199)
+- Balanced index pool: `Data/balanced_g1_g2_indices_MINperID_7500.npy` (1,260,203 indices; 7,500 cap/ID, built by `kelli_scripts/Africa_pixel_GroupID.ipynb`)
 
 ## Important Conventions
 - USGS spectra are surface reflectance (no atmosphere); EMIT L1B is TOA reflectance (atmosphere present)
@@ -133,25 +134,36 @@ Training outputs are in `Data/attn_outputs_{config}/`:
 
 ## Dissertation Structure
 Two-part structure with shared intro/background (Chapters 1-3) and closing (Chapters 10-11):
-- **Part I (Chapters 4-6):** Statistical learning methods — PCA, NMF, autoencoder, PLoM, knockoffs, conditional expectation, random forest, KNN. Predicts both mineral group banddepth and mineral ID. Key contribution: full-image prediction in milliseconds.
+- **Part I (Chapters 4-6):** Statistical learning methods — PCA, NMF, autoencoder, PLoM, knockoffs, conditional expectation, random forest, KNN. Predicts both mineral group banddepth and mineral ID. Key contribution: full-image prediction in milliseconds. Includes PACE extensibility demonstration (Ch 6).
 - **Part II (Chapters 7-9):** Physics-informed transformer — cross-attention backbone, PCA priors, LUSI, spectral derivatives. Predicts mineral ID only (95 Group 1 classes). Key contribution: spectroscopically interpretable attention validated against literature.
 - Unifying paradigm: RTM-bypass (collect small SDS-processed set → learn W→Q mapping → apply without RTM)
 - Both Parts are **post-hoc** methods: trained on L1B/L2B pairs already processed through EMIT SDS (ISOFIT + Tetracorder). No RTM at inference. Training quality bounded by SDS labels.
 - LaTeX source: `Disseratation_txt/dissertation.tex` with `references.bib`
 - USC formatting: 1" margins, double-spaced, Roman numeral prelim pages, Arabic body pages
 
-## Dissertation Chapters Status (as of 2026-03-28)
+## Dissertation Chapters Status (as of 2026-04-05)
 
-Chapters with substantial content from literature integration:
+Now 12 chapters (previously noted as 11). Chapter numbering shifted: ablation is Ch 10, generalization is Ch 11, conclusions is Ch 12.
 
 - **Ch 1:** EMIT pipeline bottlenecks (ISOFIT OE deficiencies, AOD masking, H2O biases, shadowing, soil fraction threshold)
 - **Ch 2:** Expanded background — data lifecycle, RTM emulation taxonomy (forward vs retrieval, in-line vs post-hoc), OE cost function, spatial paradigms (pixel/superpixel/full-image), Malsky transformer RT emulator, positioning table
 - **Ch 3:** Instrument specs table, Dyson design, vicarious calibration, geometric/radiometric performance table, spectral confusion/unmixing table
-- **Ch 5:** Knockoff feature selection math (exchangeability, FDR control)
-- **Ch 7:** Spectral transformer related work (SpectralFormer, SSFTT, SSTN, HSI-BERT table; MethaneMapper, SpecTf; Hughes phenomenon; mineralogical implications; emerging directions; RTM-bypass gap statement)
-- **Ch 8:** LUSI theoretical foundation (predicates, invariants, RKHS solution)
-- **Ch 10:** PACE extensibility (pixel-level, full-scene PCA+PLoM, results)
-- Chapters 4, 6, 9, 11 have skeleton/partial content with remaining TODOs
+- **Ch 4:** PCA section complete; NMF, autoencoder, comparison sections still TODO
+- **Ch 5:** PLoM section complete (diffusion maps, intrinsic dimension=85, 100k synthetic from 99 originals). Knockoff feature selection math complete (exchangeability, FDR control). KNN section TODO.
+- **Ch 6:** Training data section (sec:training_data) now fully detailed — 505,430 G1 pixels (93 classes) + 754,773 G2 pixels (177 classes) = 1,260,203 total, 7,500 cap per ID, 90/10 split. PACE extensibility present. Random forest, pixel-level results, full-image results still TODO.
+- **Ch 7:** Substantially expanded — comprehensive spectral transformer literature review with DETR/Perceiver/SpecTf architectural lineage; Hughes phenomenon; gap analysis identifying this as first spectral transformer on TOA reflectance without atmospheric correction. Full architecture description: preprocessing, tokenization, attention pooling, classification, optimization.
+- **Ch 8:** Complete — PCA-derived attention bias, reference spectra sanitization, continuum removal vs raw reflectance finding (raw wins: 0.821 vs 0.805), water vapor masking, hybrid head allocation, freeze schedule.
+- **Ch 9:** Complete — LUSI theoretical foundation (Vapnik-Izmailov predicates, invariants, RKHS), physical predicates (scale ρ∈U(0.8,1.2), slope ξ~N(0,0.01)), domain-correct augmentation (denormalize→transform→renormalize), KL divergence consistency loss.
+- **Ch 10:** Complete — full ablation table (all configs), per-head attention validation, Spearman + peak coincidence metrics, 4 key findings about physics priors.
+- **Ch 11:** Partial — cross-region generalization results (LUSI +2.6% on new scene). Part I vs Part II comparison, full-image inference timing, PACE transformer extensibility still TODO.
+- **Ch 12:** Complete — summary of contributions, key findings, limitations (4 items), future work (5 items).
+
+### Remaining TODOs
+
+- Ch 4: NMF, autoencoder, comparison methods
+- Ch 5: KNN for missing data
+- Ch 6: Random forest details, pixel-level results, full-image results
+- Ch 11: Part I vs Part II generalization comparison, full-image inference, PACE transformer extensibility
 
 ## Documentation
 Spectra_interrogationr2.ipynb contains three mathematical write-ups in markdown cells:
@@ -159,7 +171,7 @@ Spectra_interrogationr2.ipynb contains three mathematical write-ups in markdown 
 2. **Physics-Informed Priors** — PCA on USGS ref spectra, continuum removal, hybrid head allocation, freeze schedule, water vapor masking, prior evolution tracking
 3. **LUSI Consistency Regularization** — Vapnik connection, scale/slope predicates, KL divergence loss, empirical findings
 
-Notation conventions: $\mathbf{W}_p$ for pixel reflectance, $\hat{w}$ for normalized, $Q_1=95$ for mineral classes, $\tau$ for softmax temperature (not $T$, which is the physical transformation)
+Notation conventions: $\mathbf{W}_p \in \R^{N \times L}$ for pixel-level reflectance matrix, $\mathbf{w}^{(i)} \in \R^L$ for single pixel $i$, $w^{(i)}_j$ for pixel $i$ band $j$, $\hat{w}$ for normalized, $Q_1=95$ for mineral classes, $\tau$ for softmax temperature (not $T$, which is the physical transformation). Key symbol choices to avoid collisions: $\delta_j$ for learnable per-band shift (not $\beta_j$, which collides with attention bias $\boldsymbol{\beta}_{h,j}$), $\rho$ for LUSI scale factor and $\xi$ for LUSI tilt factor (not $\alpha$/$\beta$, which collide with PCA strength $\alpha$ and attention bias), $\omega_j$ for knockoff test statistic (not $W_j$, which collides with feature matrix), $g$ for Part I PCA band grouping index (not $j$, reserved for band index in Part II)
 
 ## LUSI Findings
 LUSI does not improve accuracy in any configuration tested:
