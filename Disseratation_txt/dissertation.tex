@@ -20,6 +20,7 @@
 
 \DeclareMathOperator{\diag}{\mathrm{diag}}
 \DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\argmax}{arg\,max}
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\M}{\mathbb{M}}
 
@@ -723,6 +724,8 @@ The raw EMIT observations contain approximately 581.5~million valid pixels acros
 \end{enumerate}
 The same per-class cap is applied to both groups to maximize representation across all mineral classes. Group~2 labels are carried for Part~I's banddepth prediction, while Part~II classifies Group~1 minerals exclusively.
 
+Note that the sampling procedure does not filter mineral ID~0 (``unclassified''), which Tetracorder assigns to pixels where no mineral in the spectral library produces a sufficiently high fit score. ID~0 pixels are retained in the balanced index pool and carried through feature extraction. Downstream consumers handle them as appropriate: Part~II's transformer filters ID~0 during label preparation (Section~\ref{sec:preprocessing}), shifting the remaining labels to $0 \ldots 94$ for zero-indexed cross-entropy loss.
+
 \paragraph{Feature extraction.}
 EMIT TOA reflectance is stored as $L = 285$ separate per-band files, each containing all pixels flattened across all granules. For each selected pixel index, the reflectance value at each of the 285 bands is extracted and column-stacked into a feature matrix $\mathbf{W}_p \in \R^{N \times L}$. Group~1 and Group~2 banddepth values (continuous) and mineral IDs (categorical) are extracted at the same indices and appended as QoI columns, producing the final training array $[\mathbf{W}_p \mid \mathbf{Q}] \in \R^{N \times (L + 4)}$.
 
@@ -1026,14 +1029,19 @@ Together, these six principles define a three-part physics-informed design: the 
 \section{Data Preprocessing and Normalization}
 \label{sec:preprocessing}
 
-The training and validation data are drawn from the same class-balanced pixel-level dataset described in Section~\ref{sec:training_data}, preserving the identical 90/10 train/validation split so that Part~I and Part~II results are evaluated on the same held-out pixels. Each of the $N$ training pixels has $L = 285$ spectral bands of EMIT L1B TOA reflectance $\rho_{\text{toa}}$ (converted from calibrated radiance via Equation~\ref{eq:toa_refl} in Section~\ref{sec:radiance_toa}) and a mineral class label from the EMIT SDS pipeline. Let $\mathbf{W}_p \in \R^{N \times L}$ denote the raw reflectance matrix. Preprocessing proceeds in four stages: quality filtering, label preparation, normalization, and optional derivative augmentation.
+The training and validation data are drawn from the same class-balanced pixel-level dataset described in Section~\ref{sec:training_data}, preserving the identical 90/10 train/validation split so that Part~I and Part~II results are evaluated on the same held-out pixels. 
+Each of the $N$ training pixels has $L = 285$ spectral bands of EMIT L1B TOA reflectance $\rho_{\text{toa}}$ (converted from calibrated radiance via Equation~\ref{eq:toa_refl} in Section~\ref{sec:radiance_toa}) and a Group 1 mineral class label from the EMIT SDS pipeline. 
+Let $\mathbf{W}_p \in \R^{N \times L}$ denote the TOA reflectance matrix. Preprocessing proceeds in four stages: quality filtering, label preparation, normalization, and optional derivative augmentation.
 % TODO: The architecture and training pipeline are not specific to TOA reflectance; preliminary experiments show the model can also operate on calibrated radiance $\mathbf{L}_M$ directly, bypassing the conversion in Equation~\ref{eq:toa_refl}. A systematic comparison of radiance-domain vs.\ reflectance-domain performance is planned.
 
 \paragraph{Quality filtering.}
-Rows containing non-finite values or fill/sentinel magnitudes ($|w| \geq 10^{20}$) are removed. This guards against corrupted pixels that can propagate NaN gradients during training.
+Rows containing non-finite values or fill/sentinel magnitudes ($|w| \geq 10^{20}$) are removed. 
+This guards against corrupted pixels that can propagate NaN gradients during training.
 
 \paragraph{Label preparation.}
-The mineral grouping matrix assigns each pixel a Group~1 mineral ID in the range 1\ldots95. Class 0 (unclassified) is filtered, and labels are shifted to 0\ldots94 for zero-indexed cross-entropy loss. Data is split 90/10 train/validation using a fixed random seed for reproducibility.
+The mineral grouping matrix assigns each pixel a Group~1 mineral ID in the range 1\ldots95. 
+Class 0 (unclassified) is filtered, and labels are shifted to 0\ldots94 for zero-indexed cross-entropy loss. 
+Data is split 90/10 train/validation using a fixed random seed for reproducibility and reuse across all experiments.
 
 \paragraph{Robust normalization.}
 Per-band robust z-score normalization is computed on the training split only:
@@ -1041,14 +1049,19 @@ Per-band robust z-score normalization is computed on the training split only:
 \hat{w}^{(i)}_{j} = \frac{w^{(i)}_{j} - \tilde{\mu}_j}{\sigma_{\text{IQR},j} + \epsilon},
 \label{eq:robust_norm}
 \end{equation}
-where $j = 1, \ldots, L$ indexes spectral bands, $\tilde{\mu}_j$ is the per-band median, and $\sigma_{\text{IQR},j} = Q_{75,j} - Q_{25,j}$ is the interquartile range. Median-IQR normalization is chosen over mean-standard deviation because TOA reflectance distributions are heavy-tailed: atmospheric path radiance, sub-pixel cloud contamination, and shadow effects produce outliers that inflate the standard deviation and compress the useful dynamic range. Bands with $\sigma_{\text{IQR},j} \leq 0$ (constant or near-constant across the training set) are set to $\sigma_{\text{IQR},j} = 1$ to avoid division by zero; $\epsilon = 10^{-6}$ provides additional numerical stability. The same $\tilde{\mu}_j$ and $\sigma_{\text{IQR},j}$ vectors are applied to the validation split and at inference, ensuring no information leakage.
+where $j = 1, \ldots, L$ indexes spectral bands, $\tilde{\mu}_j$ is the per-band median, and $\sigma_{\text{IQR},j} = Q_{75,j} - Q_{25,j}$ is the interquartile range. 
+Median-IQR normalization is chosen over mean-standard deviation because TOA reflectance distributions are heavy-tailed;
+atmospheric path radiance, sub-pixel cloud contamination, and shadow effects produce outliers that inflate the standard deviation and compress the useful dynamic range. 
+Bands with $\sigma_{\text{IQR},j} \leq 0$ (constant or near-constant across the training set) are set to $\sigma_{\text{IQR},j} = 1$ to avoid division by zero; 
+$\epsilon = 10^{-6}$ provides additional numerical stability. The same $\tilde{\mu}_j$ and $\sigma_{\text{IQR},j}$ vectors are applied to the validation split and at inference, ensuring no information leakage.
 
 In the model's forward pass, a learned per-band affine transform is applied after normalization:
 \begin{equation}
 \hat{w}'_j = \gamma_j \hat{w}_j + \delta_j,
 \label{eq:learnable_scale}
 \end{equation}
-where $\gamma_j$ and $\delta_j$ are trainable parameters initialized to 1 and 0, respectively. This allows the model to recover per-band rescaling if the fixed normalization is suboptimal for particular wavelength regions.
+where $\gamma_j$ and $\delta_j$ are trainable parameters initialized to 1 and 0, respectively. 
+This allows the model to recover per-band rescaling if the fixed normalization is suboptimal for particular wavelength regions.
 
 \paragraph{Spectral derivatives (optional).}
 When enabled, finite-difference derivatives are computed on the normalized spectrum to encode local absorption feature morphology:
@@ -1061,20 +1074,32 @@ with boundary conditions $\Delta\hat{w}_1 = 0$ and $\Delta^2\hat{w}_1 = \Delta^2
 \mathbf{u}_j = [\hat{w}'_j, \; \Delta\hat{w}_j, \; \Delta^2\hat{w}_j]^T \in \R^3.
 \label{eq:deriv_vector}
 \end{equation}
-The first derivative encodes slope --- whether the spectrum is on a rising or falling edge of an absorption feature at band $j$ --- and the second derivative encodes curvature --- whether band $j$ sits at a peak, trough, or inflection point. Together, these capture the morphology of absorption features (depth, asymmetry, width) as local features, analogous to what a CNN backbone extracts in DETR before the transformer evaluates global context. When derivatives are disabled, $\mathbf{u}_j = [\hat{w}'_j] \in \R^1$ and the model operates on reflectance values alone.
+The first derivative encodes slope --- whether the spectrum is on a rising or falling edge of an absorption feature at band $j$. 
+The second derivative encodes curvature --- whether band $j$ sits at a peak, trough, or inflection point. 
+Together, these capture the morphology of absorption features (depth, asymmetry, width) as local features, analogous to what a CNN backbone extracts in DETR before the transformer evaluates global context. 
+When derivatives are disabled, $\mathbf{u}_j = [\hat{w}'_j] \in \R^1$ and the model operates on reflectance values alone.
 
 \section{Tokenization and Embedding}
 \label{sec:tokenization}
 
-Each per-band feature vector $\mathbf{u}_j$ must be projected into a common embedding space before attention can operate over the spectral sequence. The tokenization stage converts the $L = 285$ per-band vectors into a sequence of $d_{\text{model}}$-dimensional token embeddings that encode both spectral content and wavelength position.
+In transformer architectures, a \emph{token} is the fundamental unit of input.
+It is a fixed-length vector that represents one discrete element of the input sequence. 
+In natural language processing, each token corresponds to a word or subword; 
+here, each token corresponds to a single spectral band. 
+A pixel's 285-band spectrum is therefore represented as a sequence of 285 tokens. 
+An \emph{embedding} is the learned mapping that converts a raw input (a scalar reflectance value, a band index) into the higher-dimensional vector space in which the transformer operates. 
+Embeddings allow the model to represent both content (what was measured at this band) and position (where this band lies in the wavelength axis) in a form amenable to attention.
 
-\paragraph{Content projection.}
-The feature vector $\mathbf{u}_j \in \R^{c_{in}}$ (where $c_{in} = 3$ with derivatives, $c_{in} = 1$ without) is projected through a learned linear layer:
+Each per-band feature vector $\mathbf{u}_j$ must be projected into a common embedding space before attention can operate over the spectral sequence.
+The tokenization stage converts the $L = 285$ per-band vectors into a sequence of $d_{\text{model}}$-dimensional token embeddings that encode both spectral content and wavelength position.
+
+\paragraph{Content embedding.}
+The feature vector $\mathbf{u}_j \in \R^{c_{in}}$ (where $c_{in} = 3$ with derivatives, $c_{in} = 1$ without) is embedded into the model's representation space through a learned linear layer:
 \begin{equation}
 \mathbf{c}_j = \text{Linear}(\mathbf{u}_j) \in \R^{d_{\text{model}}/2}.
-\label{eq:content_proj}
+\label{eq:content_emb}
 \end{equation}
-This maps the raw spectral features (reflectance, and optionally slope and curvature) into a shared representation space.
+Because reflectance is a continuous value rather than a discrete index, the content embedding is implemented as a matrix multiply rather than a table lookup, but both serve the same purpose: mapping raw inputs into the $d_{\text{model}}/2$-dimensional space in which the transformer operates.
 
 \paragraph{Positional embedding.}
 A learnable embedding table $\text{Emb}_{\text{pos}} \in \R^{L \times d_{\text{model}}/2}$ assigns each band index $j \in \{0, \ldots, L-1\}$ a unique position vector:
@@ -1082,7 +1107,8 @@ A learnable embedding table $\text{Emb}_{\text{pos}} \in \R^{L \times d_{\text{m
 \mathbf{p}_j = \text{Emb}_{\text{pos}}(j) \in \R^{d_{\text{model}}/2}.
 \label{eq:pos_emb}
 \end{equation}
-Learnable embeddings are used rather than fixed sinusoidal encodings because the spectral band positions are not uniformly spaced in physical wavelength (EMIT's sampling interval varies across the VSWIR range), and the model may benefit from learning which pairs of bands should be treated as ``nearby'' in embedding space independent of their physical wavelength separation.
+Learnable embeddings are used rather than the fixed sinusoidal encodings in \cite{vaswani2017attention} because the spectral band positions are not uniformly spaced in physical wavelength (EMIT's sampling interval varies across the VSWIR range), 
+and the model may benefit from learning which pairs of bands should be treated as ``nearby'' in embedding space independent of their physical wavelength separation.
 
 \paragraph{Concatenation and mixing.}
 Content and position are concatenated and fused through a learned mixing matrix followed by layer normalization:
@@ -1090,14 +1116,32 @@ Content and position are concatenated and fused through a learned mixing matrix 
 \mathbf{e}_j = \text{LayerNorm}\left(\mathbf{W}_{\text{in}}\left[\mathbf{c}_j \oplus \mathbf{p}_j\right]\right) \in \R^{d_{\text{model}}},
 \label{eq:token_embed}
 \end{equation}
-where $\mathbf{W}_{\text{in}} \in \R^{d_{\text{model}} \times d_{\text{model}}}$ is a learned projection and $\oplus$ denotes concatenation. The mixing matrix allows the model to learn cross-terms between content and position --- for example, that a reflectance drop (content) at band 150 (position, $\sim$1500~nm) has different significance than the same reflectance drop at band 50 ($\sim$750~nm). Layer normalization stabilizes the distribution of token embeddings across the sequence, which is important because the raw reflectance magnitudes vary by orders of magnitude across the VSWIR range.
+where $\mathbf{W}_{\text{in}} \in \R^{d_{\text{model}} \times d_{\text{model}}}$ is a learned projection and $\oplus$ denotes concatenation. 
+The mixing matrix allows the model to learn cross-terms between content and position. 
+For example, it learns that a reflectance drop (content) at band 150 (position, $\sim$1500~nm) has different significance than the same reflectance drop at band 50 ($\sim$750~nm). 
+Layer normalization stabilizes the distribution of token embeddings across the sequence, which is important because the raw reflectance magnitudes vary by orders of magnitude across the VSWIR range.
 
-The result is a sequence of $L = 285$ token embeddings $\{\mathbf{e}_1, \ldots, \mathbf{e}_L\}$, each encoding both \emph{what} the spectrum looks like at that wavelength and \emph{where} that wavelength sits in the sequence. In the default configuration ($d_{\text{model}} = 192$), each half-space has dimension 96.
+The result is a sequence of $L = 285$ token embeddings $\{\mathbf{e}_1, \ldots, \mathbf{e}_L\}$, each encoding both \emph{what} the spectrum looks like at that wavelength and \emph{where} that wavelength sits in the sequence. 
+In the default configuration ($d_{\text{model}} = 192$).
 
 \section{Attention Pooling}
 \label{sec:attn_pooling}
 
-The $L = 285$ token embeddings must be reduced to a fixed-size representation for classification. Standard approaches include mean pooling (uniform weighting), max pooling (selecting the most activated feature), or a \texttt{[CLS]} token that participates in self-attention. This architecture instead uses \emph{attention pooling}: learned query vectors that cross-attend to the full token sequence, producing a weighted summary where the weights are both learned and input-dependent.
+The $L = 285$ token embeddings must be reduced to a fixed-size representation for classification. 
+Standard approaches include mean pooling (uniform weighting), max pooling (selecting the most activated feature), or a \texttt{[CLS]} token that participates in self-attention. 
+This architecture instead uses \emph{attention pooling}: learned query vectors that cross-attend to the full token sequence, producing a weighted summary where the weights are both learned and input-dependent.
+
+The attention mechanism operates through three roles --- \emph{Query}, \emph{Key}, and \emph{Value}:
+\begin{itemize}[nosep]
+  \item A \textbf{Query} represents a question: ``which spectral bands are relevant for my task?''
+   In this architecture, each query is a learned parameter vector (one per attention head) that encodes what spectral pattern that head is looking for.
+  \item A \textbf{Key} is an identifier attached to each spectral band's token embedding. 
+  The dot product between a query and a key measures how well that band matches what the query is looking for. A high score means the band is relevant.
+  \item A \textbf{Value} is the actual information content carried by each spectral band's token embedding. 
+  Once the attention weights determine \emph{which} bands are relevant (via Query--Key matching), the output is computed as a weighted sum of the Values.
+\end{itemize}
+In short: Keys determine \emph{where} to attend, Values determine \emph{what} gets read, and Queries determine \emph{what to look for}. 
+Keys and Values are both derived from the input token embeddings through separate learned projections, while Queries in this architecture are standalone learned parameters rather than being derived from the input.
 
 \paragraph{Key and Value projections.}
 The token embeddings are projected into Key and Value spaces through learned linear transformations (without bias):
@@ -1108,16 +1152,24 @@ The token embeddings are projected into Key and Value spaces through learned lin
 where $\mathbf{E} = [\mathbf{e}_1, \ldots, \mathbf{e}_L]^T$ is the token embedding matrix and $d = d_{\text{model}}$.
 
 \paragraph{Learned queries and cross-attention.}
-Unlike standard self-attention, queries are \emph{not} derived from the input. Instead, $H$ learnable query vectors $\mathbf{q}_h \in \R^d$, $h = 1, \ldots, H$, are model parameters initialized from $\mathcal{N}(0, 1)$. Each query cross-attends to all $L$ spectral tokens:
+Unlike standard self-attention, queries are \emph{not} derived from the input. 
+Instead, $H$ learnable query vectors $\mathbf{q}_h \in \R^d$, $h = 1, \ldots, H$, are model parameters initialized from $\mathcal{N}(0, 1)$. 
+Each query cross-attends to all $L$ spectral tokens:
 \begin{align}
 s_{h,j} &= \frac{\mathbf{q}_h \cdot \mathbf{K}_j}{\sqrt{d}} + \boldsymbol{\beta}_{h,j}, \label{eq:attn_score} \\
 A_{h,j} &= \text{Softmax}_j\left(\frac{s_{h,j}}{\tau}\right), \label{eq:attn_weight} \\
 \mathbf{z}_h &= \sum_{j=1}^{L} A_{h,j} \mathbf{V}_j. \label{eq:attn_pool}
 \end{align}
-The scaled dot product $\mathbf{q}_h \cdot \mathbf{K}_j / \sqrt{d}$ measures compatibility between query $h$ and the key at band $j$. The optional additive bias $\boldsymbol{\beta}_{h,j}$ provides an interface for physics-informed priors (Chapter~\ref{chap:physics}); when no priors are used, $\boldsymbol{\beta}_{h,j} = 0$ and the bias parameter is frozen. The temperature $\tau \in (0, \infty)$ controls the sharpness of the attention distribution: $\tau < 1$ produces sharper (more selective) attention, $\tau > 1$ produces softer (more uniform) attention, and $\tau = 1$ recovers standard softmax.
+The scaled dot product $\mathbf{q}_h \cdot \mathbf{K}_j / \sqrt{d}$ measures compatibility between query $h$ and the key at band $j$. 
+The optional additive bias $\boldsymbol{\beta}_{h,j}$ provides an interface for physics-informed priors (Chapter~\ref{chap:physics}); 
+when no priors are used, $\boldsymbol{\beta}_{h,j} = 0$ and the bias parameter is frozen. 
+The temperature $\tau \in (0, \infty)$ controls the sharpness of the attention distribution: $\tau < 1$ produces sharper (more selective) attention, $\tau > 1$ produces softer (more uniform) attention, and $\tau = 1$ recovers standard softmax.
 
 \paragraph{Attention as pooling.}
-The output $\mathbf{z}_h$ is a weighted average over all Value vectors, where the weights $A_{h,j}$ sum to 1 across bands. This is precisely attention pooling: mean pooling is the degenerate case where $A_{h,j} = 1/L$ for all $j$; max pooling approximates the limit $\tau \to 0$ where attention concentrates on a single band. The key advantage is that each head can learn to attend selectively to different wavelength regions, enabling spectral specialization --- one head may focus on Fe$^{3+}$ charge transfer bands ($\sim$530~nm) while another attends to crystal field transitions ($\sim$860~nm).
+The output $\mathbf{z}_h$ is a weighted average over all Value vectors, where the weights $A_{h,j}$ sum to 1 across bands. 
+This is precisely attention pooling.
+The key advantage is that each head can learn to attend selectively to different wavelength regions, enabling spectral specialization. 
+For example, one head may focus on Fe$^{3+}$ charge transfer bands ($\sim$530~nm) while another attends to crystal field transitions ($\sim$860~nm).
 
 \paragraph{Multi-head concatenation.}
 The $H$ head outputs are concatenated into a fixed-size spectral representation:
@@ -1128,47 +1180,106 @@ The $H$ head outputs are concatenated into a fixed-size spectral representation:
 which serves as a latent bottleneck analogous to the Perceiver's latent array. With $H = 8$ heads and $d = 192$, the bottleneck has dimension 1,536 regardless of the input sequence length.
 
 \paragraph{Complexity.}
-Computing attention scores requires $O(H \times L \times d)$ operations, compared to $O(L^2 \times d)$ for self-attention. Since $H \ll L$ in all configurations tested ($H \leq 8$, $L = 285$), this represents up to a $35\times$ reduction in attention computation. In implementation, all $H$ heads are computed simultaneously via batched matrix operations:
+Computing attention scores requires $O(H \times L \times d)$ operations, compared to $O(L^2 \times d)$ for self-attention. 
+Since $H \ll L$ in all configurations tested ($H \leq 8$, $L = 285$), this represents up to a $35\times$ reduction in attention computation. 
+In implementation, rather than looping over heads one at a time, Equations~\ref{eq:attn_score}--\ref{eq:attn_pool} are computed for all $H$ heads and all batch samples simultaneously using Einstein summation (\texttt{einsum}), a tensor contraction notation in which each letter denotes a dimension and any dimension that appears in the inputs but not the output is summed over:
 \begin{align}
 \mathbf{S} &= \texttt{einsum}(\text{`hd,bld$\to$bhl'}, \mathbf{Q}, \mathbf{K}) / \sqrt{d}, \label{eq:einsum_scores} \\
 \mathbf{Z} &= \texttt{einsum}(\text{`bhl,bld$\to$bhd'}, \mathbf{A}, \mathbf{V}), \label{eq:einsum_pool}
 \end{align}
-where $\mathbf{Q} \in \R^{H \times d}$ is the query parameter matrix. This vectorized formulation eliminates the Python-level loop over heads, achieving a 30\% speedup over the loop-based implementation and scaling sub-linearly with head count due to GPU parallelism.
+where $\mathbf{Q} \in \R^{H \times d}$ is the query parameter matrix, $b$ indexes batch samples, $h$ indexes heads, $l$ indexes spectral bands, and $d$ indexes the embedding dimension. The mathematics are identical to Equations~\ref{eq:attn_score}--\ref{eq:attn_pool}; the difference is purely computational. This vectorized formulation eliminates the Python-level loop over heads, achieving a 30\% speedup over the loop-based implementation and scaling sub-linearly with head count due to GPU parallelism.
 
 \paragraph{Head diversity monitoring.}
-To detect head collapse --- the failure mode where multiple heads converge to identical queries and attend to the same bands --- the mean pairwise cosine similarity of the normalized query vectors is tracked during training:
+To detect head collapse, the failure mode where multiple heads converge to identical queries and attend to the same bands, the mean pairwise cosine similarity of the normalized query vectors is tracked during training:
 \begin{equation}
 \text{head\_sim} = \frac{1}{H(H-1)} \sum_{h \neq h'} \frac{\mathbf{q}_h \cdot \mathbf{q}_{h'}}{|\mathbf{q}_h||\mathbf{q}_{h'}|}.
 \label{eq:head_sim}
 \end{equation}
-Values near 0 indicate maximally diverse heads; values near 1 indicate collapse. In practice, head\_sim remains below 0.05 across all configurations, with the transformer-only 8-head model achieving the lowest value (0.010).
+Values near 0 indicate maximally diverse heads; 
+values near 1 indicate collapse. 
+In practice, head\_sim remains below 0.05 across all configurations, with the transformer-only 8-head model achieving the lowest value (0.010).
 
 \section{Classification and Prediction}
 \label{sec:classification}
 
-The pooled representation $\mathbf{z}_{\text{cat}}$ is passed through a 2-layer feedforward network to produce class logits over $Q_1 = 94$ mineral classes:
+The pooled representation $\mathbf{z}_{\text{cat}}$ is passed through a 2-layer feedforward classification head to produce class logits over $Q_1 = 94$ mineral classes. 
+The network consists of a nonlinear gate, a hidden layer that compresses the representation, and a final classification projection:
 \begin{align}
-\mathbf{h}_1 &= \text{ReLU}(\mathbf{z}_{\text{cat}}), \label{eq:mlp_relu1} \\
-\mathbf{h}_2 &= \text{ReLU}(\mathbf{W}_1 \mathbf{h}_1 + \mathbf{b}_1), \label{eq:mlp_hidden} \\
-\text{logits} &= \mathbf{W}_2 \, \text{Dropout}(\mathbf{h}_2) + \mathbf{b}_2 \in \R^{Q_1}, \label{eq:mlp_logits}
+\mathbf{f}_1 &= \text{ReLU}(\mathbf{z}_{\text{cat}}) \in \R^{Hd}, \label{eq:mlp_relu1} \\
+\mathbf{f}_2 &= \text{ReLU}(\mathbf{W}_1 \mathbf{f}_1 + \mathbf{b}_1) \in \R^{d}, \label{eq:mlp_hidden} \\
+\text{logits} &= \mathbf{W}_2 \, \text{Dropout}(\mathbf{f}_2) + \mathbf{b}_2 \in \R^{Q_1}, \label{eq:mlp_logits}
 \end{align}
-where $\mathbf{W}_1 \in \R^{d \times Hd}$, $\mathbf{W}_2 \in \R^{Q_1 \times d}$, and Dropout (with probability $p = 0.1$) is applied only during training. The first ReLU operates directly on $\mathbf{z}_{\text{cat}}$ before the linear projection, providing a nonlinear gate on the concatenated head outputs. This two-layer architecture with an intermediate bottleneck from $Hd$ to $d$ dimensions compresses the multi-head representation before the final classification projection, reducing the number of parameters in $\mathbf{W}_2$ by a factor of $H$.
+where $\mathbf{W}_1 \in \R^{d \times Hd}$ and $\mathbf{W}_2 \in \R^{Q_1 \times d}$. 
+The first ReLU (Equation~\ref{eq:mlp_relu1}) operates directly on $\mathbf{z}_{\text{cat}}$ before any linear projection, providing a nonlinear gate that zeroes out negative activations from the concatenated head outputs. 
+The hidden layer $\mathbf{f}_2$ (Equation~\ref{eq:mlp_hidden}) is the critical bottleneck: it compresses the $Hd = 1{,}536$-dimensional multi-head representation down to $d = 192$ dimensions, forcing the network to distill the information from all $H$ heads into a compact form before classification. 
+Without this bottleneck, the final projection $\mathbf{W}_2$ would operate directly on the 1{,}536-dimensional input, requiring $H\times$ more parameters and offering no intermediate nonlinearity to combine information across heads. Dropout (with probability $p = 0.1$) is applied to $\mathbf{f}_2$ only during training: it randomly zeroes out 10\% of the hidden layer activations each batch, preventing the classifier from relying on any single neuron and reducing overfitting, which is particularly important for the rare mineral classes that have few training samples.
 
-At inference, the predicted mineral class is $\hat{y} = \arg\max(\text{logits})$, and top-$k$ predictions are obtained from the $k$ highest logit values. Top-3 accuracy is reported alongside top-1 because spectral similarity between mineral subgroups (e.g., hematite vs.\ goethite, both iron oxides with overlapping Fe$^{3+}$ features) means the correct class is often among the top few predictions even when the top-1 prediction is incorrect.
+At inference, the logits vector is the sole output used for prediction. The predicted Group~1 mineral ID for pixel $i$ is:
+\begin{equation}
+\hat{q}_1^{(i)} = \argmax_{c \in \{1, \ldots, Q_1\}} \text{logits}_c,
+\label{eq:prediction}
+\end{equation}
+completing the $\mathbf{W} \rightarrow \mathbf{Q}$ mapping introduced in Part~I: given a single pixel's TOA reflectance spectrum $\mathbf{w}^{(i)} \in \R^L$, the transformer produces a predicted mineral class $\hat{q}_1^{(i)}$ without atmospheric correction.
+
+In addition to the single best prediction (top-1), the model's top-$k$ predictions are obtained by ranking all 94 logit values and selecting the $k$ classes with the highest scores. A prediction is considered correct under the top-$k$ metric if the true mineral class appears anywhere among these $k$ candidates. Top-3 accuracy is reported alongside top-1 because many mineral classes are spectroscopically similar --- for example, hematite and goethite are both iron oxides whose Fe$^{3+}$ absorption features overlap substantially in the VNIR, and several clay minerals share nearly identical SWIR signatures. In such cases, the model may assign high logit values to two or three closely related minerals, with the correct class narrowly missing the top rank but appearing second or third. A high top-3 accuracy (e.g., 0.968 vs.\ 0.813 top-1 for the 8-head transformer) indicates that the model has learned meaningful spectral distinctions and that most errors are confusions among spectrally similar minerals rather than gross misclassifications.
+
+Each prediction is accompanied by a confidence score obtained by applying the softmax function to the logits: $\hat{p}_c = \text{Softmax}(\text{logits})_c$, which maps the raw logit values to a probability distribution over all 94 classes (values between 0 and 1 that sum to 1). For example, a pixel might produce top-1: hematite (0.72), top-2: goethite (0.15), top-3: lepidocrocite (0.04), meaning the model assigns 72\% confidence to hematite and 15\% to goethite. A high probability on the top-1 prediction indicates the model is confident in its classification, while a narrow gap between top-1 and top-2 signals uncertainty --- often between spectrally similar minerals where the distinction is genuinely ambiguous at TOA. These scores should be interpreted as relative confidence rather than calibrated probabilities, since neural networks can be systematically overconfident or underconfident. Label smoothing (Section~\ref{sec:optimization}) partially mitigates overconfidence by preventing the model from learning to assign near-1.0 probability to any single class during training.
+
+\section{Model Parameter Summary}
+\label{sec:param_summary}
+
+Table~\ref{tab:params} summarizes the total number of learnable parameters in the model for both the 4-head and 8-head configurations. The model is deliberately compact: the entire 8-head model contains fewer than 457{,}000 parameters, which is orders of magnitude smaller than typical vision transformers (e.g., ViT-Base has 86~million parameters). This efficiency stems from the cross-attention design --- with only $H$ learned queries rather than $L^2$ self-attention pairs, the backbone requires minimal parameters beyond the shared Key/Value projections.
+
+\begin{table}[ht]
+\centering
+\caption{Learnable parameter counts by component for $d_{\text{model}} = 192$, $L = 285$ bands, $Q_1 = 94$ classes, and $c_{in} = 3$ (with derivatives).}
+\label{tab:params}
+\begin{tabular}{l l r r}
+\hline
+\textbf{Component} & \textbf{Dimensions} & \textbf{$H=4$} & \textbf{$H=8$} \\
+\hline
+\multicolumn{4}{l}{\emph{Backbone}} \\
+\quad Content embedding ($\mathbf{W}_{\text{val}}$) & $c_{in} \times 96 + 96$ & 384 & 384 \\
+\quad Positional embedding ($\text{Emb}_{\text{pos}}$) & $285 \times 96$ & 27{,}360 & 27{,}360 \\
+\quad Mixing matrix ($\mathbf{W}_{\text{in}}$) + bias & $192 \times 192 + 192$ & 37{,}056 & 37{,}056 \\
+\quad Layer normalization ($\gamma, \beta$) & $192 + 192$ & 384 & 384 \\
+\quad Query vectors ($\mathbf{Q}$) & $H \times 192$ & 768 & 1{,}536 \\
+\quad Key projection ($\mathbf{W}_K$) & $192 \times 192$ & 36{,}864 & 36{,}864 \\
+\quad Value projection ($\mathbf{W}_V$) & $192 \times 192$ & 36{,}864 & 36{,}864 \\
+\quad Per-band affine ($\gamma_j, \delta_j$) & $285 + 285$ & 570 & 570 \\
+\quad Attention bias ($\boldsymbol{\beta}_{h,j}$) & $H \times 285$ & 1{,}140 & 2{,}280 \\
+\quad \textbf{Backbone total} & & \textbf{141{,}390} & \textbf{143{,}298} \\
+\hline
+\multicolumn{4}{l}{\emph{Classification head}} \\
+\quad Hidden layer ($\mathbf{W}_1, \mathbf{b}_1$) & $Hd \times d + d$ & 147{,}648 & 295{,}104 \\
+\quad Output layer ($\mathbf{W}_2, \mathbf{b}_2$) & $d \times Q_1 + Q_1$ & 18{,}335 & 18{,}335 \\
+\quad \textbf{Head total} & & \textbf{165{,}983} & \textbf{313{,}439} \\
+\hline
+\textbf{Model total} & & \textbf{307{,}373} & \textbf{456{,}737} \\
+\hline
+\end{tabular}
+\end{table}
+
+The classification head accounts for the majority of parameters (54\% for $H=4$, 69\% for $H=8$) because the hidden layer projection $\mathbf{W}_1$ scales linearly with head count. The backbone is largely head-count-independent: the Key and Value projections are shared across all heads, and only the query vectors and attention biases grow with $H$. Doubling the head count from 4 to 8 adds only 1{,}908 backbone parameters but 147{,}456 classification head parameters.
 
 \section{Optimization}
 \label{sec:optimization}
 
 \paragraph{Loss function.}
-The primary training objective is cross-entropy loss with optional label smoothing:
+Cross-entropy is the standard loss function for multi-class classification. Minimizing cross-entropy is equivalent to maximum likelihood estimation: it directly maximizes the probability the model assigns to the correct mineral class. Cross-entropy also has favorable gradient properties --- when the model is confidently wrong, it produces large gradients that drive rapid correction, whereas when the model is already correct, gradients are small and training remains stable. The primary training objective is cross-entropy loss with optional label smoothing:
 \begin{equation}
 \mathcal{L}_{\text{CE}} = -\sum_{c=1}^{Q_1} \tilde{y}_c \log \hat{p}_c, \quad \text{where} \quad \tilde{y}_c = (1 - \epsilon_{\text{ls}}) \cdot y_c + \frac{\epsilon_{\text{ls}}}{Q_1},
 \label{eq:ce_loss}
 \end{equation}
 and $\hat{p}_c = \text{Softmax}(\text{logits})_c$. Label smoothing ($\epsilon_{\text{ls}} = 0.05$ in the default configuration) prevents the model from becoming overconfident on training examples, which is important for a 94-class problem where some classes have few training samples and the model could otherwise memorize noisy labels.
 
+\paragraph{Backpropagation and parameter updates.}
+All learnable parameters in the model --- content and positional embeddings, Key/Value projection matrices, query vectors, attention biases, classification head weights, and the per-band affine parameters $\gamma_j$, $\delta_j$ --- are updated through backpropagation. After the forward pass computes the loss $\mathcal{L}$ for a batch, the chain rule is applied in reverse through every operation in the network to compute $\partial \mathcal{L} / \partial \theta$ for each parameter $\theta$. These gradients indicate how each parameter should change to reduce the loss: the sign indicates the direction and the magnitude indicates the sensitivity. The optimizer then uses these gradients to update the parameters (the specific update rule is described below). Because every operation in the forward pass (linear projections, softmax, ReLU, concatenation, layer normalization) is differentiable, gradients flow from the loss all the way back to the input embeddings, allowing the entire model to be trained end-to-end from a single objective.
+
 \paragraph{Optimizer and parameter groups.}
-AdamW is used with two parameter groups:
+AdamW \cite{loshchilov2019adamw} is an adaptive gradient optimizer that maintains per-parameter learning rates based on running estimates of gradient mean and variance, allowing parameters with different update characteristics (e.g., query vectors vs.\ positional embeddings vs.\ classification weights) to be optimized at appropriate scales. The ``W'' denotes decoupled weight decay: unlike standard Adam, which applies weight decay through the gradient update and thus entangles it with the adaptive learning rate, AdamW applies weight decay as a separate multiplicative shrinkage step. This decoupling ensures that regularization strength is consistent regardless of gradient magnitude, and has made AdamW the default optimizer for transformer architectures since its introduction.
+
+AdamW is configured with two parameter groups:
 \begin{enumerate}[nosep]
   \item \textbf{Main parameters} (all weights and biases except attention bias): weight decay $= 3 \times 10^{-3}$.
   \item \textbf{Attention bias} $\boldsymbol{\beta}_{h,j}$: weight decay $= 0$, since the bias encodes band-importance information (either learned or physics-initialized) that should not be penalized toward zero.
@@ -1364,7 +1475,7 @@ Aerosol loading and Rayleigh scattering add a wavelength-dependent offset to TOA
 T_{\text{tilt}}(\mathbf{w}) = \mathbf{w} + \xi \cdot \boldsymbol{\lambda}_{\text{grid}}, \quad \xi \sim \mathcal{N}(0, 0.01),
 \label{eq:tilt_predicate}
 \end{equation}
-where $\boldsymbol{\lambda}_{\text{grid}} = \text{linspace}(-1, 1, L)$ is a normalized wavelength ramp. The standard deviation of 0.01 is conservative, producing small perturbations that approximate the effect of varying aerosol optical depth.
+where $\boldsymbol{\lambda}_{\text{grid}} = \text{linspace}(-1, 1, L)$ is a normalized wavelength ramp.\footnote{The current implementation spaces $\boldsymbol{\lambda}_{\text{grid}}$ uniformly by band index rather than by physical wavelength. Because EMIT's band spacing is not perfectly uniform across the VSWIR range, the tilt perturbation per nanometer is slightly non-uniform. Given the small magnitude of $\xi$ ($\sigma = 0.01$), this approximation has negligible effect, but a future refinement could construct $\boldsymbol{\lambda}_{\text{grid}}$ from the actual EMIT wavelength centers.} The standard deviation of 0.01 is conservative, producing small perturbations that approximate the effect of varying aerosol optical depth.
 
 \paragraph{Joint transformation.}
 The two predicates are applied jointly as a single augmentation:
