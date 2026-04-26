@@ -7,7 +7,8 @@ Physics-informed transformer for hyperspectral mineral classification from EMIT 
 - Cross-attention transformer with learned query vectors (not self-attention) — O(L) not O(L^2)
 - Three modular enhancements: PCA-based attention bias (USGS ref spectra), LUSI consistency regularization, spectral derivatives input
 - 285 EMIT bands, 95 mineral classes (Group 1), per-pixel classification
-- Training script lineage: spectral_trans_withqoi_attentionr{N}_pcalusi.py (current: r14)
+- Training script lineage: spectral_trans_withqoi_attentionr{N}_pcalusi.py (current: r15)
+- r15 vs r14: non-PCA hybrid heads now init to zero instead of 0.01·N(0,I) noise — symmetry breaking comes from random query vectors q_h ~ N(0,1), so explicit bias noise is unnecessary. This makes non-PCA-head behavior consistent between physics_init=True (hybrid) and physics_init=False (all zeros). Re-run ablation pending.
 
 ## Key Data Paths
 - Training data: `/Users/kmccoy/Documents/USC/Research/Dissertation/Data/TOApixel_balanced_W_gb1ID_gb2ID_train7500.npy`
@@ -25,6 +26,30 @@ Physics-informed transformer for hyperspectral mineral classification from EMIT 
 - Labels in training data: column -2 is Group 1 ID (1..95), shifted to 0..94; class 0 is dropped
 - Robust z-score normalization: (x - median) / (IQR + 1e-6), computed on train split only
 - With full ~1M training data, 23-spectrum and 93-spectrum ref sets perform comparably (top1=0.804). The 93-spectrum set underperforms only on small subsets (~1000 samples).
+
+## Group 1 Class Distribution (verified from raw 396 granules)
+- 92 of 95 Group 1 IDs are populated. 3 are absent: ID 1 (green plastic tarp; artificial-material reference), ID 72 (staurolite; Fe2+ metamorphic silicate), ID 74 (augite; Fe2+ pyroxene). All three are unexpected in arid dust-source-region surfaces, so absence is consistent with regional mineralogy.
+- Top 9 most prevalent Group 1 classes are all iron-bearing minerals (consistent with EMIT mission focus):
+  1. ID 8: Goethite thin film (162.6M pixels)
+  2. ID 0: unclassified (87.2M; not a mineral, dropped before training)
+  3. ID 46: Nano-hematite + fine-goethite mix (84.8M)
+  4. ID 45: Nano-hematite (69.6M)
+  5. ID 47: Nano-hematite variant (49.7M)
+  6. ID 4: Goethite + Quartz (37.2M)
+  7. ID 40: Weathered basalt (25.3M)
+  8. ID 20: Cummingtonite — Fe/Mg amphibole (13.1M)
+  9. ID 28: Fe-Hydroxide amorphous (12.6M)
+- After 7,500 per-class cap: 20 of 92 populated classes fall short of the target — IDs (count): 83(1), 94(15), 63(71), 58(91), 34(105), 81(108), 35(116), 26(135), 12(195), 71(218), 93(289), 91(299), 88(365), 84(580), 85(992), 54(1000), 39(1024), 87(1205), 78(1219), 90(1328). The other 72 reach the cap.
+- Three rarest Group 1 classes are geologically/spectroscopically explainable: rhodochrosite (ID 63, MnCO3) and rhodonite (ID 94, MnSiO3) are localized Mn ore minerals genuinely uncommon on arid surfaces; desert varnish (ID 83, GDS78A on rhyolite) is physically common but rarely matches at 60m pixel scale because (i) sub-mm coatings get spectrally averaged with substrate, (ii) the reference is hyper-specific (varnish-on-rhyolite-from-single-sample). Tetracorder match counts ≠ surface mineralogical abundance.
+- Group 2 raw: 581.5M pixels (8.16% ID 0). Sampled: 1.26M pixels (10.71% ID 0). Most common G2 class is ID 168 with 77M pixels.
+
+## Figures inventory (Dissertation_images/)
+- `architecture_diagram.pdf` — full-pipeline TikZ diagram (paper + dissertation), built from `PaperofPartII/test_diagram.tex`
+- `G1_orig_samphist.png` — Group 1 raw vs. stratified-sample distribution (paper + dissertation)
+- `G2_orig_samphist.png` — Group 2 raw vs. stratified-sample distribution, ID 0 excluded (dissertation only)
+- `G1_hist.png`, `G2_hist.png` — single-panel raw histograms (no longer used in current docs; kept for reference)
+- `Africa-collection.png` — map of 396 granules over Africa/Middle East, used in EMIT Instrument section (wrapfig)
+- `Data_level_depiction.png` — RTM-bypass vs. SDS pipeline schematic, used in RTM-bypass paradigm subsection
 
 ## Attention Head Analysis (r14, 4-head, PCA+derivatives+continuum)
 Per-head attention reveals distinct specialization:
@@ -141,7 +166,7 @@ Two-part structure with shared intro/background (Chapters 1-3) and closing (Chap
 - LaTeX source: `Disseratation_txt/dissertation.tex` with `references.bib`
 - USC formatting: 1" margins, double-spaced, Roman numeral prelim pages, Arabic body pages
 
-## Dissertation Chapters Status (as of 2026-04-05)
+## Dissertation Chapters Status (as of 2026-04-25)
 
 Now 12 chapters (previously noted as 11). Chapter numbering shifted: ablation is Ch 10, generalization is Ch 11, conclusions is Ch 12.
 
@@ -150,7 +175,7 @@ Now 12 chapters (previously noted as 11). Chapter numbering shifted: ablation is
 - **Ch 3:** Instrument specs table, Dyson design, vicarious calibration, geometric/radiometric performance table, spectral confusion/unmixing table
 - **Ch 4:** PCA section complete; NMF, autoencoder, comparison sections still TODO
 - **Ch 5:** PLoM section complete (diffusion maps, intrinsic dimension=85, 100k synthetic from 99 originals). Knockoff feature selection math complete (exchangeability, FDR control). KNN section TODO.
-- **Ch 6:** Training data section (sec:training_data) now fully detailed — 505,430 G1 pixels (93 classes) + 754,773 G2 pixels (177 classes) = 1,260,203 total, 7,500 cap per ID, 90/10 split. PACE extensibility present. Random forest, pixel-level results, full-image results still TODO.
+- **Ch 6:** Training data section (sec:training_data) now fully detailed — 505,430 G1 pixels across 92 of 95 populated classes + 754,773 G2 pixels (177 classes) = 1,260,203 total, 7,500 cap per ID, 90/10 split. New additions: raw G1 distribution paragraph naming the three missing IDs (1=plastic tarp, 72=staurolite, 74=augite); identification of top-9 G1 classes as all iron-bearing (goethite/hematite-dominated, consistent with EMIT mission focus); G2 distribution paragraph with ID 0 stats (8.16% raw, 10.71% sampled); shortfall table listing 20 G1 classes that fell short of 7,500 cap (1 to 1,328 pixels). Figures: G1_orig_samphist (raw vs sample), G2_orig_samphist (dissertation only). PACE extensibility present. Random forest, pixel-level results, full-image results still TODO.
 - **Ch 7:** Substantially expanded — comprehensive spectral transformer literature review with DETR/Perceiver/SpecTf architectural lineage; Hughes phenomenon; gap analysis identifying this as first spectral transformer on TOA reflectance without atmospheric correction. Full architecture description: preprocessing, tokenization (token/embedding definitions, content + positional embeddings), attention pooling (Query/Key/Value definitions, cross-attention, einsum implementation), classification head (hidden layer bottleneck 1536→192→94, dropout, prediction equation $\hat{q}_1^{(i)}$ linking to QoI framework), parameter summary table (307K for H=4, 457K for H=8), optimization (cross-entropy with label smoothing, backpropagation, AdamW with decoupled weight decay, cosine LR schedule).
 - **Ch 8:** Complete — PCA-derived attention bias, reference spectra sanitization, continuum removal vs raw reflectance finding (raw wins: 0.821 vs 0.805), water vapor masking, hybrid head allocation, freeze schedule.
 - **Ch 9:** Complete — LUSI theoretical foundation (Vapnik-Izmailov predicates, invariants, RKHS), physical predicates (scale ρ∈U(0.8,1.2), slope ξ~N(0,0.01)), domain-correct augmentation (denormalize→transform→renormalize), KL divergence consistency loss.
@@ -177,7 +202,16 @@ Notation conventions (updated 2026-04-14): $\mathbf{W}^p \in \R^{N \times L}$ fo
 - `Disseratation_txt/PaperofPartII/partII_paper.tex` — journal paper for Remote Sensing of Environment (elsarticle class)
 - Shares `references.bib` with dissertation (copied to both directories)
 - Covers Part II content: architecture, PCA priors, LUSI, ablation, cross-scene generalization
-- Key additions vs dissertation: TOA decomposition equation (Eq. toa_decomp) connecting surface/TOA reflectance to PCA and LUSI motivation; forward model / retrieval framing from Thompson
+- Key additions vs dissertation: TOA decomposition equation (Eq. toa_decomp) connecting surface/TOA reflectance to PCA and LUSI motivation; forward model / retrieval framing from Thompson; sRTMnet/MODTRAN lineage (ISOFIT originally called MODTRAN, sRTMnet trained on MODTRAN outputs replaces those calls in the operational pipeline)
+- Group 1 only — Group 2 distribution + per-class shortfall table are dissertation-exclusive; paper has compact prose summary
+- Continuum-removed-vs-raw subsection sits in blue at the end of the paper (post-bibliography candidate, kept tentative pending space)
+
+## Architecture Diagram
+- Source: `Disseratation_txt/PaperofPartII/test_diagram.tex` (TikZ standalone) → renders to `test_diagram.pdf` → copied to `Dissertation_images/architecture_diagram.pdf` for use in both paper and dissertation
+- Vaswani-style color palette: pink=embedding, grey=linear projection, orange=attention, light green=softmax, cyan=feed-forward, yellow=optional physics-informed components (spectral priors + LUSI), purple=loss
+- Dashed arrows = optional/conditional pathways; solid = required data flow
+- Annotations to the side of dense blocks (MLP head, spectral priors, T_joint) document internal operations without breaking out separate sub-blocks
+- Recompile after edits: `cd Disseratation_txt/PaperofPartII && pdflatex test_diagram.tex && cp test_diagram.pdf ../Dissertation_images/architecture_diagram.pdf`
 
 ## LUSI Findings
 LUSI does not improve accuracy in any configuration tested:
@@ -192,9 +226,9 @@ LUSI does not improve accuracy in any configuration tested:
 - .npy, .pt, .nc, .asc files are gitignored except for specific exceptions in Spectra/group1_all/
 
 ## Running Training
-Typical invocation (r14):
+Typical invocation (r15 — same flags as r14, only the script name changes):
 ```
-python kelli_scripts/spectral_trans_withqoi_attentionr14_pcalusi.py \
+python kelli_scripts/spectral_trans_withqoi_attentionr15_pcalusi.py \
   --data "Data/TOApixel_balanced_W_gb1ID_gb2ID_train7500.npy" \
   --physics_init --physics_mode pca \
   --ref_spectra "Spectra/from_minmatrix_all/ALL_spectra_concat_23x285.npy" \

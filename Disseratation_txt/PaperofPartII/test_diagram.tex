@@ -1,0 +1,114 @@
+\documentclass[tikz,border=10pt]{standalone}
+
+\usepackage{amsmath, amssymb, bm}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, calc}
+
+\newcommand{\R}{\mathbb{R}}
+
+\begin{document}
+
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=5mm,
+  >=Stealth,
+  % "Attention is all you need"-style color palette:
+  block/.style   ={draw, rounded corners=1pt, minimum width=32mm, minimum height=7mm, align=center},
+  embed/.style   ={draw, fill=pink!40,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % embeddings
+  attn/.style    ={draw, fill=orange!35, rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % attention
+  ff/.style      ={draw, fill=cyan!25,   rounded corners=1pt, minimum width=32mm, minimum height=7mm, align=center}, % feed-forward
+  linear/.style  ={draw, fill=gray!25,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % linear layers
+  softmax/.style ={draw, fill=green!30,  rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % softmax
+  tensor/.style  ={draw, fill=white,     rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % data-flow tensors
+  queryv/.style  ={draw, fill=orange!35, rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % learned queries (attention input)
+  bias/.style    ={draw, fill=yellow!25, rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % physics prior (optional, same family as LUSI)
+  lusi/.style    ={draw, fill=yellow!25, rounded corners=1pt, minimum width=30mm, minimum height=6mm, align=center}, % LUSI branch (optional)
+  loss/.style    ={draw, fill=purple!15, rounded corners=1pt, minimum width=32mm, minimum height=7mm, align=center}, % loss boxes
+  op/.style      ={draw, circle, minimum size=5mm, inner sep=0pt},
+  arrow/.style   ={-Stealth, thick},
+]
+
+% --- Input & preprocessing ---
+\node[block, fill=gray!10]          (spec) {Pixel spectrum $\mathbf{w}_i \in \R^{L},\ L=285$};
+\node[font=\small\bfseries, left=3mm of spec] (startlabel) {start};
+\node[block, above=of spec]         (norm) {Robust z-score};
+\node[tensor, above=of norm]        (uj)   {Per-band features $\mathbf{u}_j = [\hat{w}'_j,\, \Delta\hat{w}_j,\, \Delta^2\hat{w}_j]^T \in \R^3$};
+
+% --- Split embedding (content + position) ---
+\node[embed, above left =6mm and -4mm of uj] (cj) {Content embed\\ $\mathbf{c}_j = \text{Linear}(\mathbf{u}_j) \in \R^{d/2}$};
+\node[embed, above right=6mm and -4mm of uj] (pj) {Positional embed\\ $\mathbf{p}_j = \text{Emb}_{\text{pos}}(j) \in \R^{d/2}$};
+\node[op,    above=9mm of uj]       (cat1) {$\oplus$};
+\node[linear, above=of cat1]        (Win)  {$\mathbf{W}_{\text{in}}$ $+$ LayerNorm};
+\node[embed, above=of Win]          (E)    {Token embeddings $\mathbf{E} \in \R^{L \times d}$};
+
+% --- K, V projections + separate learned queries ---
+\node[linear, above left =8mm and -4mm of E] (K) {$\mathbf{K} = \mathbf{E}\mathbf{W}_K$};
+\node[linear, above right=8mm and -4mm of E] (V) {$\mathbf{V} = \mathbf{E}\mathbf{W}_V$};
+\node[queryv, right=16.5mm of V]      (q) {Learned queries\\ $\mathbf{q}_1,\ldots,\mathbf{q}_H$};
+
+% --- Cross-attention pipeline ---
+\node[attn, above=of K]             (score) {Score: $\mathbf{K}\mathbf{q}_h/\sqrt{d}\ +\ \bm{\beta}_h$};
+\node[bias,  left=10mm of score]    (beta)  {$\bm{\beta}_h$ (spectral priors)};
+\node[font=\scriptsize\itshape, text=gray!60!black, align=center, below=2mm of beta]
+      (betadetail)
+      {USGS ref.\ $\mathbf{X}_{\text{ref}} \in \R^{M \times L}$\\
+       PCA $\to$ top-$k$ eigenvectors $\mathbf{v}_h$\\
+       $\mathbf{b}_h = \text{z-score}(|\mathbf{v}_h|)$\\
+       $\bm{\beta}_h^{(0)} = \alpha\, \mathbf{b}_h$};
+\node[softmax, above=of score]      (sm)    {Softmax / $\tau_a$};
+\node[attn, above=of sm]            (A)     {Attention weights $\mathbf{A}_h \in \R^L$};
+\node[attn, above=of A]             (pool)  {Pool: $\mathbf{z}_h = \mathbf{V}^\top \mathbf{A}_h$};
+
+% --- Head concat + classifier ---
+\node[op,    above=of pool]         (cat2) {$\oplus$};
+\node[tensor, above=of cat2]        (zcat) {$\mathbf{z}_{\text{cat}} \in \R^{Hd}$};
+\node[ff,    above=of zcat]         (mlp)  {MLP head ($Hd \to d \to Q_1$)};
+\node[font=\scriptsize\itshape, text=gray!60!black, align=left, right=2mm of mlp]
+      (mlpdetail)
+      {ReLU $\mathbf{f}_1 \in \R^{Hd}$\\
+       hidden: $\mathbf{f}_2 = \text{ReLU}(\mathbf{W}_1 \mathbf{f}_1 + \mathbf{b}_1) \in \R^{d}$\\
+       logits $= \mathbf{W}_2\,\text{Dropout}(\mathbf{f}_2) + \mathbf{b}_2$};
+\node[softmax, above=of mlp]         (out) {$\hat{q}_{1,i}$ (softmax over 95 classes)};
+
+% --- Losses ---
+\node[loss, above=of out]            (ce)   {$\mathcal{L}_{\text{CE}}$ (cross-entropy)};
+\node[loss, fill=purple!30, above=7mm of ce]  (total){$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \lambda_{\text{LUSI}}\,\mathcal{L}_{\text{LUSI}}$};
+
+% --- LUSI branch (optional, dashed) ---
+\node[lusi,  right=32mm of spec]    (T)    {LUSI: $T_{\text{joint}}(\mathbf{w}_i)$};
+\node[font=\scriptsize\itshape, text=gray!60!black, align=left, anchor=south west]
+      at ($(T.north west) + (-17mm, 1mm)$)
+      (Tdetail)
+      {$T_{\text{joint}}(\mathbf{w}) = \rho \mathbf{w} + \xi \bm{\lambda}_{\text{grid}}$};
+\node[lusi,  right=42mm of out]     (kl)   {$\mathcal{L}_{\text{LUSI}} = D_{\text{KL}}(\cdot \| \cdot)$};
+\node[font=\scriptsize\itshape, text=gray!60!black, align=left, anchor=north west]
+      at ($(kl.south east) + (-13mm, -2mm)$)
+      (kldetail) {student pass $\to \mathbf{p}_{\text{trans}}$};
+
+% --- Main arrows ---
+\draw[arrow] (spec) -- (norm);   \draw[arrow] (norm) -- (uj);
+\draw[arrow] (uj)   -- (cj);
+\draw[arrow] (spec.east) to[out=0, in=-90] (pj.south);
+\draw[arrow] (cj)   -- (cat1);   \draw[arrow] (pj)   -- (cat1);
+\draw[arrow] (cat1) -- (Win);    \draw[arrow] (Win)  -- (E);
+\draw[arrow] (E)    -- (K);      \draw[arrow] (E)    -- (V);
+\draw[arrow] (K)    -- (score);  \draw[arrow] (q)    |- (score);
+\draw[arrow, dashed] (beta) -- (score);
+\draw[arrow] (score)-- (sm);     \draw[arrow] (sm)   -- (A);
+\draw[arrow] (A)    -- (pool);   \draw[arrow] (V)    |- (pool);
+\draw[arrow] (pool) -- (cat2);   \draw[arrow] (cat2) -- (zcat);
+\draw[arrow] (zcat) -- (mlp);    \draw[arrow] (mlp)  -- (out);
+
+% --- Loss arrows ---
+\draw[arrow] (out) -- (ce);
+\draw[arrow, dashed] (ce)  -- (total);
+
+% --- LUSI arrows (dashed) ---
+\draw[arrow, dashed] (spec) -- (T);
+\draw[arrow, dashed] (T) -- (kl);
+\draw[arrow, dashed] (out) -- node[above, font=\scriptsize\itshape, text=gray!60!black] {teacher pass $\to \mathbf{p}_{\text{orig}}$} (kl);
+\draw[arrow, dashed] (kl.north) |- (total.east);
+
+\end{tikzpicture}
+
+\end{document}
