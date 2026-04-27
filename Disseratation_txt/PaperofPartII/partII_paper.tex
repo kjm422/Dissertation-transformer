@@ -73,7 +73,7 @@ Identifying these materials relies on comparing orbital measurements against com
 Mineral dust radiative forcing, the measure of how airborne dust alters the Earth's energy balance by scattering or absorbing sunlight, is one of the largest uncertainties in climate modeling \cite{ipcc_2021}.
 Light-colored minerals (e.g., clays and quartz) reflect sunlight and cool the atmosphere, whereas dark-colored minerals (specifically iron oxides like hematite) absorb solar energy and generate heat.
 Because current climate models often rely on highly uncertain estimates of iron oxide abundance (ranging from $0$ to $7\text{ wt}\%$), they can produce up to a $460\%$ uncertainty in regional radiative forcing predictions.
-To close this critical knowledge gap, NASA developed the Earth Surface Mineral Dust Source Investigation (EMIT). \textcolor{red}{\textbf{TODO:} need citation}
+To close this critical knowledge gap, NASA developed the Earth Surface Mineral Dust Source Investigation (EMIT) \cite{emit_l1b_atbd}.
 
 EMIT maps the mineral composition of Earth's arid regions from the International Space Station, collecting hyperspectral data across 285 contiguous spectral bands in the visible to shortwave infrared (VSWIR, 380--2500~nm) with approximately 7.4~nm spectral sampling and 60~m spatial resolution. 
 However, translating these massive hyperspectral data cubes into precise mineralogical maps presents a computational challenge.
@@ -249,8 +249,6 @@ A primary challenge is spectral confusion between mineral species. The hematite-
 \section{Related work: Spectral transformers for hyperspectral analysis}
 \label{sec:related}
 
-\subsection{From CNNs to transformers}
-
 Shallow classifiers (SVMs, random forests) paired with dimensionality reduction (PCA, LDA) formed the standard HSI pipeline for decades.
 Deep learning brought 1D, 2D, and 3D CNNs that model local spatial-spectral correlations \cite{hong2021spectralformer}, but CNNs are fundamentally limited by localized receptive fields.
 In mineral analysis, discriminative absorption features are distributed across distant wavelengths (e.g., Fe$^{3+}$ charge transfer at $\sim$530~nm and crystal field transitions at $\sim$860~nm).
@@ -260,30 +258,33 @@ The Transformer architecture \cite{vaswani2017attention} provided an alternative
 \text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{Softmax}\!\left(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}}\right)\mathbf{V},
 \label{eq:self_attention}
 \end{equation}
-where $d_k$ is the dimension of the key vectors $\mathbf{K} \in \R^{n \times d_k}$. However, the $\mathbf{Q}\mathbf{K}^T$ product gives self-attention $O(L^2)$ complexity, motivating the pursuit of efficient alternatives.
+where $d_k$ is the dimension of the key vectors $\mathbf{K} \in \R^{n \times d_k}$. 
+However, the $\mathbf{Q}\mathbf{K}^T$ product gives self-attention $O(L^2)$ complexity, motivating the pursuit of efficient alternatives.
 
-\subsection{Architectural foundations}
+\subsection{Transformer Architectural 
+foundations}
 \label{sec:arch_inspirations}
 
-Three works directly inspired the architecture presented here:
+Three works directly inspired the architecture presented here. Table~\ref{tab:arch_inspirations} maps the architectural lineage of this work relative to past work.
 
-\paragraph{DETR: CNN-Transformer hybridization.}
-Carion et al.\ \cite{carion2020detr} established a hybrid methodology: a CNN backbone extracts local features, which are processed by a transformer encoder-decoder. This ``local-then-global'' philosophy is adopted here through shape-aware tokenization, which computes spectral derivatives as local features before cross-attention evaluates global context.
+\paragraph{DETR: CNN-Transformer hybridization}
+Carion et al.\ \cite{carion2020detr} established a hybrid methodology, where a CNN backbone extracts local features, which are processed by a transformer encoder-decoder. 
+This ``local-then-global'' philosophy is adopted here through shape-aware tokenization, which computes spectral derivatives as local features before cross-attention evaluates global context.
 
-\paragraph{Perceiver: Cross-attention.}
-Jaegle et al.\ \cite{jaegle2021perceiver} introduced asymmetric cross-attention: rather than computing self-attention among all $L$ tokens, a fixed-size set of $M$ learned query vectors ($M \ll L$) cross-attends to the input, reducing complexity from $O(L^2)$ to $O(M \times L)$. This paper takes this to its extreme: one query per head, yielding $O(H \times L)$ complexity and directly interpretable per-band attention weights.
+\paragraph{Perceiver: Cross-attention}
+Jaegle et al.\ \cite{jaegle2021perceiver} introduced asymmetric cross-attention. 
+Rather than computing self-attention among all $L$ tokens, a fixed-size set of $M$ learned query vectors ($M \ll L$) cross-attends to the input, reducing model complexity from $O(L^2)$ to $O(M \times L)$. 
+This paper takes uses one query per head, yielding $O(H \times L)$ complexity and directly interpretable per-head, per-band attention weights.
 
-\paragraph{SpecTf: Per-pixel spectral modeling.}
-SpecTf \cite{lee2025spectf} demonstrated that a pure 1D spectral sequence model, without spatial context, achieves state-of-the-art performance on EMIT data. 
-Its attention weights revealed physically meaningful patterns (water vapor bands, Rayleigh scattering) learned without explicit programming, validating the per-pixel spectral approach adopted here.
-
-Table~\ref{tab:arch_inspirations} maps the architectural lineage of this work relative to past work.
+\paragraph{SpecTf: Per-pixel spectral modeling}
+SpecTf \cite{lee2025spectf} demonstrated that a 1D spectral sequence model, without spatial context, achieves state-of-the-art performance on EMIT data. 
+Its attention weights revealed physically meaningful patterns learned without explicit programming, informing the per-pixel spectral-only approach adopted here.
 
 \begin{table}[htbp]
 \centering
 \caption{Architectural lineage: mapping foundational concepts to this work.}
 \label{tab:arch_inspirations}
-\begin{tabular}{p{0.70\textwidth}p{0.22\textwidth}}
+\begin{tabular}{p{0.78\textwidth}p{0.18\textwidth}}
 \hline
 \textbf{This Work} & \textbf{Source} \\
 \hline
@@ -296,18 +297,18 @@ Table~\ref{tab:arch_inspirations} maps the architectural lineage of this work re
 \end{tabular}
 \end{table}
 
-\subsection{Other Influential spectral transformers}
+\subsection{Other influential spectral transformers, not utilized in this work}
 
 SpectralFormer \cite{hong2021spectralformer} introduced group-wise spectral embedding and cross-layer adaptive fusion. SSFTT \cite{sun2022ssftt} combined lightweight 3D/2D CNNs with Gaussian-weighted tokenization. SSTN \cite{zhong2021sstn} factorized attention into parallel spatial and spectral modules. MethaneMapper \cite{kumar2023methanemapper} demonstrated spectral absorption-aware attention for methane detection from AVIRIS-NG data.
 
-\subsection{Gap: No RTM-bypass via spectral transformers}
+\subsection{Gap: RTM-bypass via spectral transformers}
 
 Existing spectral transformer architectures, like those discussed above, operate on atmospherically corrected surface reflectance or target atmospheric phenomena rather than surface mineralogy from uncorrected observations.
 At petabyte scale, and for applications requiring low-latency, real-time, or onboard inference, this per-pixel iterative retrieval is a critical computational bottleneck.
 
-The architecture presented is, to the authors' knowledge, the first spectral transformer applied to mineral classification from TOA reflectance without atmospheric correction.
-The motivation is not to avoid the RTM for its own sake, but to eliminate the inference-time bottleneck it imposes.
-By learning the composite L1B-to-L2B mapping directly from a small set of SDS-processed training granules, the approach pays the full SDS cost only once.
+The architecture presented is, to the authors' knowledge, the first spectral transformer attempting mineral classification from TOA reflectance without atmospheric correction.
+The motivation is to eliminate the inference-time bottleneck the RTM imposes.
+By learning the L1B-to-L2B mapping directly from a small set of SDS-processed training granules, the approach pays the full SDS cost only once.
 The cross-attention design with physics-informed spectral priors and statistical invariance regularization enables learning mineral features in the presence of atmospheric interference, and per-head attention analysis provides spectroscopic validation.
 The approach treats SDS outputs as noisy labels of true mineral classes and learns to map from L1B sensor observations directly to these labels, eliminating the iterative retrieval step at inference.
 %% ====================================================================
@@ -316,7 +317,7 @@ The approach treats SDS outputs as noisy labels of true mineral classes and lear
 \section{Architecture}
 \label{sec:architecture}
 
-The proposed architecture is a cross-attention transformer designed specifically for per-pixel spectral classification from hyperspectral TOA reflectance. It departs from conventional self-attention transformers (which were designed for natural language and images) in three substantive ways: the queries are learned rather than derived from the input; the attention bias provides a physics-injection interface for reference-spectra priors; and the loss function accommodates statistical invariants drawn from the physics of atmospheric perturbation. Key architectural features include:
+The proposed architecture is a cross-attention transformer designed specifically for per-pixel spectral classification from hyperspectral TOA reflectance. It departs from conventional self-attention transformers (which were designed for natural language and images) in three substantive ways: the queries are learned rather than derived from the input; the attention bias provides a physics-injection interface for reference-spectra priors; and the loss function accommodates statistical invariants drawn from physically motivated perturbations of TOA reflectance. Key architectural features include:
 \begin{itemize}
   \item \textbf{Learned spectral queries:} Unlike self-attention transformers, this architecture probes the spectral sequence with learned templates, reducing complexity from $O(L^2)$ to $O(H \times L)$.
   \item \textbf{Spectral infusion priors:} USGS reference spectra initialize attention bias via PCA to steer heads toward diagnostic absorption features.
@@ -333,7 +334,7 @@ The remainder of this section formalizes the notation, walks through preprocessi
 
 \subsection{Notation}
 
-Table~\ref{tab:notation} summarizes the key symbols used throughout this paper.
+Table~\ref{tab:notation} summarizes the key symbols used throughout the remainder of this paper.
 
 \begin{table}[htbp]
 \centering
@@ -352,11 +353,15 @@ $c_{in}$ & Input features per band (3 with derivatives, 1 without) \\
 $\mathbf{W}^p \in \R^{N \times L}$ & Pixel-level TOA reflectance matrix \\
 $\mathbf{w}_i \in \R^L$ & Spectrum of pixel $i$ \\
 $w_{ij}$ & Reflectance of pixel $i$ at band $j$ \\
-$\hat{w}$ & Normalized spectrum (robust z-score) \\
 $\hat{q}_{1,i}$ & Predicted Group~1 mineral class for pixel $i$ \\
+$\mathbf{E} \in \R^{L \times d}$ & Token embedding matrix (rows are per-band token vectors $\mathbf{e}_j$) \\
+$\mathbf{K} \in \R^{L \times d}$ & Key matrix; rows are per-band keys $\mathbf{K}_j$ \\
+$\mathbf{V} \in \R^{L \times d}$ & Value matrix; rows are per-band values $\mathbf{V}_j$ \\
 $\mathbf{q}_h \in \R^d$ & Learned query vector for head $h$ \\
 $\mathbf{A}_h \in \R^L$ & Attention weight vector for head $h$ \\
 $\bm{\beta}_h \in \R^L$ & Additive attention bias vector (physics prior interface) \\
+$\mathbf{z}_h \in \R^d$ & Pooled head vector for head $h$ \\
+$\mathbf{z}_{\text{cat}} \in \R^{Hd}$ & Concatenated multi-head vector ($\mathbf{z}_1 \oplus \cdots \oplus \mathbf{z}_H$) \\
 $\tau_a$ & Attention softmax temperature \\
 $\tau_l$ & LUSI consistency loss temperature \\
 \hline
@@ -366,15 +371,20 @@ $\tau_l$ & LUSI consistency loss temperature \\
 \subsection{Data preprocessing and normalization}
 \label{sec:preprocessing}
 
-The training data consists of $N = 1{,}260{,}203$ class-balanced pixels drawn from EMIT L1B TOA reflectance observations over Africa and the Middle East, split 90/10 into training and validation sets with a fixed random seed. 
+All operations in this subsection (label preparation, robust z-score normalization, the learnable per-band affine, and spectral derivatives) are performed in the \emph{original $L$-dimensional reflectance space}. 
+No embedding or projection into a higher-dimensional latent space happens until tokenization (Section~\ref{sec:tokenization}). 
+The model sees one scalar per band at this stage.
+
+The training data consists of $N = 1{,}260{,}203$ class-balanced pixels drawn from EMIT L1B TOA reflectance observations over Africa and the Middle East, split 90/10 into training and validation sets with a fixed random seed.
 Each pixel has $L = 285$ spectral bands and a Group~1 mineral class label from the EMIT SDS pipeline.
 
 The raw distribution of Tetracorder-assigned Group~1 mineral IDs across the 396 source granules is highly imbalanced (Figure~\ref{fig:g1_hist}), spanning several orders of magnitude between the most and least populated classes.
 The most prevalent class is goethite (ID~8, 162~million pixels), followed by hematite-goethite mixtures and nano-hematite variants (IDs 45--47); the top nine populated classes are all iron-bearing minerals, consistent with EMIT's mission focus on iron-oxide-rich arid dust source regions \cite{emit_factsheet}.
 Three of the 95 expected Group~1 IDs are entirely absent in the study region (IDs 1, 72, and 74, corresponding to a green plastic tarp reference, staurolite, and augite respectively), so 92 of 95 classes are populated. 
-To prevent the model from collapsing onto the dominant classes, a stratified per-class cap of 7{,}500 pixels is applied during sampling, yielding the balanced pool described above. 
+To prevent the model from collapsing onto the dominant classes, a stratified per-class cap of 7{,}500 pixels is applied during sampling.
 Even after capping, 20 of the 92 populated Group~1 classes fall short of the 7{,}500 target, ranging from a single pixel for ID~83 to 1{,}328 pixels for ID~90.
-This residual imbalance is an unavoidable consequence of the natural distribution of surface mineralogy in arid dust source regions: rare minerals are not present in enough pixels to reach the per-class cap.
+This residual imbalance is a somewhat unavoidable consequence of the natural distribution of surface mineralogy in arid dust source regions: rare minerals are not present in enough pixels to reach the per-class cap.
+Additional samples from other arid regions could have filled the imbalance, but recall that the desire is to train on a small set of representative granules in a single geographic region and transfer the learning to other geographic areas.
 
 \begin{figure}[htbp]
 \centering
@@ -383,24 +393,28 @@ This residual imbalance is an unavoidable consequence of the natural distributio
 \label{fig:g1_hist}
 \end{figure}
 
-\paragraph{Label preparation.}
+\paragraph{Label preparation}
 Class 0 (unclassified, assigned by Tetracorder to pixels where no mineral produces a sufficiently high fit score) is filtered, and labels are shifted to $0 \ldots 94$ for zero-indexed cross-entropy loss.
 \textcolor{red}{\textbf{TODO:} Re-run training without filtering Class 0 --- retaining unclassified pixels may improve the model's ability to reject ambiguous spectra.}
 
-\paragraph{Robust normalization.}
+\paragraph{Robust normalization}
 Per-band robust z-score normalization is computed on the training split only:
 \begin{equation}
 \hat{w}_{ij} = \frac{w_{ij} - \tilde{\mu}_j}{\sigma_{\text{IQR},j} + \epsilon},
 \label{eq:robust_norm}
 \end{equation}
-where $\tilde{\mu}_j$ is the per-band median and $\sigma_{\text{IQR},j} = Q_{75,j} - Q_{25,j}$ is the interquartile range. Median-IQR normalization is chosen over mean-standard deviation because TOA reflectance distributions are heavy-tailed: atmospheric path radiance, sub-pixel cloud contamination, and shadow effects produce outliers that inflate the standard deviation. The same statistics are applied to the validation split and at inference.
+where $\tilde{\mu}_j$ is the per-band median and $\sigma_{\text{IQR},j} = Q_{75,j} - Q_{25,j}$ is the interquartile range. 
+Median-IQR normalization is chosen over mean-standard deviation because TOA reflectance distributions are heavy-tailed-- atmospheric path radiance, sub-pixel cloud contamination, and shadow effects produce outliers that inflate the standard deviation. 
+The same statistics are applied to the validation split and at inference.
 
 A learned per-band affine transform is applied in the forward pass:
 \begin{equation}
 \hat{w}'_j = \gamma_j \hat{w}_j + \delta_j,
 \label{eq:learnable_scale}
 \end{equation}
-where $\gamma_j$ and $\delta_j$ are trainable parameters initialized to 1 and 0, respectively.
+where $\gamma_j$ and $\delta_j$ are trainable parameters initialized to 1 and 0, respectively. 
+This adds per-band learnable scale and shift that the model can adjust during training to give certain bands more or less weight in the downstream feature path. 
+This feature allows the model to normalize for numerical stability, then let it recover the scaling actually useful for the task.
 
 \paragraph{Spectral derivatives.}
 Finite-difference derivatives encode local absorption feature morphology:
@@ -413,31 +427,40 @@ producing a per-band feature vector $\mathbf{u}_j = [\hat{w}'_j, \Delta\hat{w}_j
 \subsection{Tokenization and embedding}
 \label{sec:tokenization}
 
-In this architecture, each spectral band corresponds to one \emph{token}: a fixed-length vector representing a discrete element of the input sequence. A pixel's 285-band spectrum is represented as a sequence of 285 tokens. An \emph{embedding} is the learned mapping from raw input into the model's working vector space.
+In this architecture, each spectral band corresponds to one \emph{token}: a fixed-length vector representing an element of the input sequence.
+A pixel's 285-band spectrum is represented as a sequence of 285 tokens.
+An \emph{embedding} is a learned, distance-preserving (in some task-relevant sense) representation in a continuous vector space.
+Similar inputs map to nearby points and dissimilar inputs map to distant points, with the geometric structure shaped by gradient descent on the classification loss. 
 
-\paragraph{Content embedding.}
+\paragraph{Content embedding}
 The feature vector $\mathbf{u}_j \in \R^{c_{in}}$ is embedded via a learned linear layer:
 \begin{equation}
 \mathbf{c}_j = \text{Linear}(\mathbf{u}_j) \in \R^{d/2}.
 \label{eq:content_emb}
 \end{equation}
+The geometric expectation is that two pixels with similar local absorption-feature morphology at band $j$ should map to nearby points in the 96-dimensional content embedding space, regardless of overall pixel brightness or atmospheric noise.
 
-\paragraph{Positional embedding.}
+\paragraph{Positional embedding}
 A learnable embedding table $\text{Emb}_{\text{pos}} \in \R^{L \times d/2}$ assigns each band index a unique position vector:
 \begin{equation}
 \mathbf{p}_j = \text{Emb}_{\text{pos}}(j) \in \R^{d/2}.
 \label{eq:pos_emb}
 \end{equation}
+The geometric expectation is that bands at adjacent wavelengths should have similar position vectors, while bands far apart in the spectrum (e.g., 100 and 250, $\sim$1100~nm vs.\ $\sim$2200~nm) should have distinct ones.
 
-\paragraph{Concatenation and mixing.}
-Content and position are concatenated and fused through a learned mixing matrix followed by layer normalization:
+\paragraph{Concatenation and mixing}
+Content and position are concatenated into a $d$-dimensional vector and then fused by a learned \emph{mixing layer}, a linear projection $\mathbf{W}_{\text{in}}$ followed by layer normalization:
 \begin{equation}
 \mathbf{e}_j = \text{LayerNorm}\left(\mathbf{W}_{\text{in}}\left[\mathbf{c}_j \oplus \mathbf{p}_j\right]\right) \in \R^{d},
 \label{eq:token_embed}
 \end{equation}
-where $\mathbf{W}_{\text{in}} \in \R^{d \times d}$ is a learned projection and $\oplus$ denotes concatenation.
+where $\mathbf{W}_{\text{in}} \in \R^{d \times d}$ is a learned projection and $\oplus$ denotes concatenation. 
+The mixing layer is necessary because the concatenation alone leaves content and position as two disjoint blocks within the token vector.
+Downstream attention would then see them as independent feature groups. 
+By passing the concatenation through $\mathbf{W}_{\text{in}}$, the model learns to combine content and position, producing token embeddings whose components depend on both \emph{what} the spectrum looks like at band $j$ and \emph{where} band $j$ sits in the spectral sequence. 
+The LayerNorm stabilizes the output distribution before tokens enter the attention mechanism.
 
-\paragraph{Choice of embedding dimension.}
+\paragraph{Choice of embedding dimension}
 The embedding dimension $d = 192$ is chosen so that the positional and data embeddings each occupy $d/2 = 96$ dimensions (Equations~\ref{eq:content_emb}--\ref{eq:pos_emb}), a value in the range of compact transformer precedents (e.g.\ DeiT-Tiny, SpecTf \cite{lee2025spectf}). 
 This keeps the total parameter count low and the forward-pass memory footprint small enough to train and serve on modest local hardware (Apple Silicon with MPS or a single consumer GPU), minimizing edge and onboard deployment risk. 
 A systematic sweep over $d$ to establish an accuracy optimum is left as future work.
@@ -446,8 +469,8 @@ A systematic sweep over $d$ to establish an accuracy optimum is left as future w
 \label{sec:attn_pooling}
 
 After tokenization, each pixel is represented as a sequence of $L = 285$ token embeddings $\{\mathbf{e}_1, \ldots, \mathbf{e}_L\}$, one per spectral band. 
-To classify the pixel, this variable-structure spectral sequence must be reduced to a fixed-size summary vector. 
-Simple choices such as mean or max pooling treat all bands equally or pick a single winning band; 
+To classify the pixel, this 285-token sequence must be reduced to a single summary vector that the classification head can consume. 
+Choices such as mean or max pooling treat all bands equally or pick a single winning band; 
 \emph{attention pooling} instead produces a \emph{learned weighted average} over bands, where the weights are adapted to emphasize bands that carry the most discriminative information for the task.
 
 The mechanism here is \emph{cross-attention}. 
@@ -455,9 +478,9 @@ The weights are produced by comparing a small set of learned ``query'' vectors a
 Concretely, each of $H$ query vectors $\mathbf{q}_h \in \R^d$ (one per attention head) is compared against the key representation of every one of the 285 spectral tokens, producing a per-band score. 
 These scores are normalized via softmax and used to weight the corresponding value vectors. 
 This is different from self-attention, where queries, keys, and values all come from the same sequence. 
-Here, queries are independent model parameters, which reduces complexity from $O(L^2)$ to $O(H \times L)$ and makes the resulting attention weights directly interpretable as per-band importance scores.
+In this case, queries are independent model parameters, which reduces complexity from $O(L^2)$ to $O(H \times L)$ and makes the resulting attention weights directly interpretable as per-band importance scores.
 
-\paragraph{Key and Value projections.}
+\paragraph{Key and Value projections}
 As in the standard attention formulation (Equation~\ref{eq:self_attention}), the keys $\mathbf{K}$ and values $\mathbf{V}$ are produced by linear projections of the input sequence. 
 Stacking the token embeddings as rows of the embedding matrix $\mathbf{E} = [\mathbf{e}_1, \ldots, \mathbf{e}_L]^T \in \R^{L \times d}$, the key and value matrices are computed via:
 \begin{align}
@@ -468,8 +491,8 @@ where $\mathbf{W}_K, \mathbf{W}_V \in \R^{d \times d}$ are learned projection ma
 Each row of $\mathbf{K}$ is the key vector for one spectral band, and similarly for $\mathbf{V}$. 
 The distinction from Equation~\ref{eq:self_attention} lies not in how $\mathbf{K}$ and $\mathbf{V}$ are built, but in where the queries originate.
 
-\paragraph{Learned queries and cross-attention.}
-Whereas self-attention (Equation~\ref{eq:self_attention}) projects queries from the same token sequence that supplies the keys and values, this architecture treats the queries as \emph{independent model parameters}.
+\paragraph{Learned queries and cross-attention}
+This architecture treats the queries as \emph{independent model parameters}.
 $H$ learnable vectors $\mathbf{q}_h \in \R^d$, one per attention head, are initialized from $\mathcal{N}(\mathbf{0}, \mathbf{I})$ and updated by gradient descent along with the rest of the model. 
 Each $\mathbf{q}_h$ can be interpreted as a learned spectral ``question'' the model poses to the input. 
 At training time, the gradient of the classification loss with respect to $\mathbf{q}_h$ nudges it toward the pattern whose presence or absence is most informative for that head's contribution to mineral classification. 
@@ -480,12 +503,23 @@ Per head attention is computed in three steps: score, weight, and pool.
 \mathbf{z}_h &= \mathbf{V}^T \mathbf{A}_h \in \R^d. & & \text{(pooled head vector)} \label{eq:attn_pool}
 \end{align}
 The matrix-vector product $\mathbf{K}\mathbf{q}_h$ computes all $L$ dot-product scores in one operation, scaled by $\sqrt{d}$ to prevent softmax saturation. 
-The additive bias $\bm{\beta}_h \in \R^L$ is a learnable parameter that provides the interface for physics-informed priors.
-When no spectral priors are used, $\bm{\beta}_h$ is initialized to $\mathbf{0}$ so attention is uniform across bands at initialization; the bias is still trainable and the model learns its own band preferences from data.
-When PCA priors are used (Section~\ref{sec:physics}), $\bm{\beta}_h$ is initialized to nonzero values that shift pre-softmax scores band-by-band: components where $\beta_{h,j}$ is large receive more attention, so the magnitude of $\bm{\beta}_h$ relative to the random dot-product scores controls how strongly the prior biases initial attention.
-The temperature $\tau_a$ controls attention sharpness ($\tau_a = 0.9$ in all experiments).
+The additive bias $\bm{\beta}_h \in \R^L$ is a learnable parameter that provides the interface for physics-informed priors (Section~\ref{sec:physics}).
+When no spectral priors are used, $\bm{\beta}_h$ is initialized to $\mathbf{0}$ so attention is uniform across bands at initialization; 
+the bias is still trainable and the model learns its own band preferences from data.
+When spectral priors are used, $\bm{\beta}_h$ is initialized to nonzero values that shift pre-softmax scores band-by-band. 
+The temperature $\tau_a$ controls how peaked the attention distribution is after softmax.
+Smaller $\tau_a$ concentrates more attention mass on top-scoring bands and pulls mass away from low-scoring ones, while larger $\tau_a$ flattens the distribution toward uniform. 
+We use $\tau_a = 0.9$ in all experiments, so the model focuses on diagnostic bands without losing its ability to attend to multiple bands at once.
+Sensitivity to $\tau_a$ was not systematically ablated and is left for future work.
 
-\paragraph{Multi-head concatenation.}
+The score and weight steps determine \emph{where} head $h$ looks; 
+the pool step (Equation~\ref{eq:attn_pool}) determines \emph{what} it reads. 
+Each row $\mathbf{V}_j$ of the value matrix is the value vector for band $j$. 
+The content the head will draw from that band whenever attention is present. 
+The pooled head vector is an attention-weighted sum of these value vectors, $\mathbf{z}_h = \mathbf{V}^T \mathbf{A}_h = \sum_{j=1}^L A_{h,j}\, \mathbf{V}_j$, so bands with high attention weight contribute most to $\mathbf{z}_h$ and bands with low attention weight contribute little. 
+The result is a single $d$-dimensional vector summarizing what head $h$ extracted from the input spectrum. 
+The separation between $\mathbf{K}$ and $\mathbf{V}$ lets the model decide \emph{where to look} and \emph{what to read} with independent learnable parameters.
+
 The $H$ head vectors are concatenated and flattened into a single vector:
 \begin{equation}
 \mathbf{z}_{\text{cat}} = \mathbf{z}_1 \oplus \cdots \oplus \mathbf{z}_H \in \R^{Hd}.
@@ -495,12 +529,16 @@ The $H$ head vectors are concatenated and flattened into a single vector:
 \subsection{Classification head}
 \label{sec:classification}
 
+The concatenated multi-head vector $\mathbf{z}_{\text{cat}}$ produced by attention pooling (Section~\ref{sec:attn_pooling}) is passed through a small two-layer feed-forward classifier that maps the $Hd$-dimensional spectral summary down to one logit per mineral class:
 \begin{align}
-\mathbf{f}_1 &= \text{ReLU}(\mathbf{z}_{\text{cat}}) \in \R^{Hd}, \label{eq:mlp_relu1} \\
-\mathbf{f}_2 &= \text{ReLU}(\mathbf{W}_1 \mathbf{f}_1 + \mathbf{b}_1) \in \R^{d}, \label{eq:mlp_hidden} \\
-\text{logits} &= \mathbf{W}_2 \, \text{Dropout}(\mathbf{f}_2) + \mathbf{b}_2 \in \R^{Q_1}, \label{eq:mlp_logits}
+\mathbf{f}_1 &= \text{ReLU}(\mathbf{z}_{\text{cat}}) \in \R^{Hd}, & & \text{(input activation)} \label{eq:mlp_relu1} \\
+\mathbf{f}_2 &= \text{ReLU}(\mathbf{W}_1 \mathbf{f}_1 + \mathbf{b}_1) \in \R^{d}, & & \text{(hidden layer)} \label{eq:mlp_hidden} \\
+\text{logits} &= \mathbf{W}_2 \, \text{Dropout}(\mathbf{f}_2) + \mathbf{b}_2 \in \R^{Q_1}, & & \text{(output / class logits)} \label{eq:mlp_logits}
 \end{align}
-where $\mathbf{W}_1 \in \R^{d \times Hd}$ and $\mathbf{W}_2 \in \R^{Q_1 \times d}$. The hidden layer $\mathbf{f}_2$ compresses the $Hd = 1{,}536$-dimensional multi-head representation to $d = 192$ dimensions. Dropout ($p = 0.1$) is applied during training only. The predicted mineral ID for pixel $i$ is:
+where $\mathbf{W}_1 \in \R^{d \times Hd}$ and $\mathbf{W}_2 \in \R^{Q_1 \times d}$. 
+The hidden layer $\mathbf{f}_2$ compresses the $Hd = 1{,}536$-dimensional multi-head representation to $d = 192$ dimensions. 
+The two ReLU activations introduce the nonlinearities that let the classifier learn nonlinear class boundaries.
+Dropout (probability $p = 0.1$, applied during training only) randomly zeroes 10\% of the hidden activations in each batch, preventing the classifier from over-relying on any single neuron and improving generalization, particularly to the rare classes with few training pixels. The predicted mineral ID for pixel $i$ is:
 \begin{equation}
 \hat{q}_{1,i} = \argmax_{c \in \{1, \ldots, Q_1\}} \text{logits}_c.
 \label{eq:prediction}
@@ -508,112 +546,143 @@ where $\mathbf{W}_1 \in \R^{d \times Hd}$ and $\mathbf{W}_2 \in \R^{Q_1 \times d
 
 \subsection{Model parameter summary}
 
-The model is compact: the entire 8-head model contains fewer than 457{,}000 parameters (Table~\ref{tab:params}), orders of magnitude smaller than typical vision transformers.
-
-\begin{table}[htbp]
-\centering
-\caption{Learnable parameter counts ($d = 192$, $L = 285$, $Q_1 = 94$, $c_{in} = 3$).}
-\label{tab:params}
-\begin{tabular}{l l r r}
-\hline
-\textbf{Component} & \textbf{Dimensions} & \textbf{$H=4$} & \textbf{$H=8$} \\
-\hline
-\multicolumn{4}{l}{\emph{Backbone}} \\
-\quad Content embedding ($\mathbf{c}_j$) & $c_{in} \times 96 + 96$ & 384 & 384 \\
-\quad Positional embedding ($\mathbf{p}_j$) & $285 \times 96$ & 27{,}360 & 27{,}360 \\
-\quad Mixing matrix ($\mathbf{W}_{\text{in}}$) + bias & $192 \times 192 + 192$ & 37{,}056 & 37{,}056 \\
-\quad Layer normalization & $192 + 192$ & 384 & 384 \\
-\quad Query vectors ($\mathbf{q}_h$) & $H \times 192$ & 768 & 1{,}536 \\
-\quad Key projection ($\mathbf{W}_K$) & $192 \times 192$ & 36{,}864 & 36{,}864 \\
-\quad Value projection ($\mathbf{W}_V$) & $192 \times 192$ & 36{,}864 & 36{,}864 \\
-\quad Per-band affine ($\gamma_j, \delta_j$) & $285 + 285$ & 570 & 570 \\
-\quad Attention bias ($\bm{\beta}_h$) & $H \times 285$ & 1{,}140 & 2{,}280 \\
-\quad \textbf{Backbone total} & & \textbf{141{,}390} & \textbf{143{,}298} \\
-\hline
-\multicolumn{4}{l}{\emph{Classification head}} \\
-\quad Hidden layer ($\mathbf{W}_1, \mathbf{b}_1$) & $Hd \times d + d$ & 147{,}648 & 295{,}104 \\
-\quad Output layer ($\mathbf{W}_2, \mathbf{b}_2$) & $d \times Q_1 + Q_1$ & 18{,}335 & 18{,}335 \\
-\quad \textbf{Head total} & & \textbf{165{,}983} & \textbf{313{,}439} \\
-\hline
-\textbf{Model total} & & \textbf{307{,}373} & \textbf{456{,}737} \\
-\hline
-\end{tabular}
-\end{table}
+The model is compact, with 307{,}373 learnable parameters at $H = 4$ and 456{,}737 at $H = 8$, orders of magnitude smaller than typical vision transformers. These counts depend on $d = 192$, $L = 285$, $Q_1 = 95$, and $c_{in} = 3$.
 
 \subsection{Optimization}
 \label{sec:optimization}
 
+Cross-entropy is the standard loss for multi-class classification.
+Minimizing it is equivalent to maximum likelihood estimation, directly maximizing the probability assigned to the correct mineral class. 
+It also has favorable gradient properties: large gradients when the model is confidently wrong, small gradients when the model is already correct, making certain that convergence is not destabilized. 
 The primary training objective is cross-entropy loss with label smoothing:
 \begin{equation}
 \mathcal{L}_{\text{CE}} = -\sum_{c=1}^{Q_1} \tilde{q}_c \log \hat{p}_c, \quad \text{where} \quad \tilde{q}_c = (1 - \epsilon_{\text{ls}}) q_c + \frac{\epsilon_{\text{ls}}}{Q_1},
 \label{eq:ce_loss}
 \end{equation}
-where $q_c \in \{0,1\}$ is the one-hot ground truth mineral class label, $\tilde{q}_c$ is the label-smoothed target, $\hat{p}_c = \text{Softmax}(\text{logits})_c$ is the predicted class probability, and $\epsilon_{\text{ls}} = 0.05$.
+where $q_c \in \{0,1\}$ is the one-hot ground truth mineral class label, $\tilde{q}_c$ is the label-smoothed target, $\hat{p}_c = \text{Softmax}(\text{logits})_c$ is the predicted class probability, and $\epsilon_{\text{ls}} = 0.05$. 
+Label smoothing replaces the hard one-hot target with a softened distribution that places mass $1 - \epsilon_{\text{ls}}$ on the true class and spreads the remaining $\epsilon_{\text{ls}}$ uniformly across the other $Q_1 - 1$ classes \cite{szegedy2016rethinking}. 
+This prevents the model from driving the correct-class logit to $+\infty$ and provides regularization, given thatTetracorder labels are noisy and several Group~1 classes have few training pixels.
 
-AdamW \cite{loshchilov2019adamw} is used with two parameter groups: main parameters (weight decay $= 3 \times 10^{-3}$) and attention bias (weight decay $= 0$). 
-A cosine annealing schedule with linear warmup controls the learning rate $\eta(t)$. The warmup phase ramps $\eta$ from zero to $\eta_{\max} = 5 \times 10^{-4}$ over the first 5\% of training steps, preventing large destructive updates while weights are still random. The cosine decay phase then smoothly reduces $\eta$ to $\eta_{\min} = 0.1\,\eta_{\max}$, allowing the model to make large steps early to find the right region of parameter space and smaller steps later to fine-tune without overfitting to noisy Tetracorder labels.
+AdamW \cite{loshchilov2019adamw} is used with two parameter groups. 
+The \emph{main} group contains every learnable parameter except the attention bias, $\bm{\beta}_h$, and is given weight decay $3 \times 10^{-3}$. 
+The attention bias $\bm{\beta}_h$ is placed in its own group with weight decay $= 0$. 
+
+A cosine annealing schedule with linear warmup controls the learning rate $\eta(t)$. 
+The warmup phase ramps $\eta$ from zero to $\eta_{\max} = 5 \times 10^{-4}$ over the first 5\% of training steps, preventing large destructive updates while weights are still random. 
+The cosine decay phase then smoothly reduces $\eta$ to $\eta_{\min} = 0.1\,\eta_{\max}$, allowing the model to make large steps early to find the right region of parameter space and smaller steps later to fine-tune without overfitting to Tetracorder labels.
+
+\subsection{Transformer-only results}
+\label{sec:trans_only_results}
+
+\textcolor{red}{\textbf{TODO:} Baseline results for the transformer architecture described above, with no physics priors and no LUSI regularization ($\bm{\beta}_h = \mathbf{0}$, frozen). Report top-1 / top-3 accuracy at $H = 4$ and $H = 8$, training time, and per-head attention analysis (which heads recover spectroscopically valid Fe$^{3+}$ / crystal-field features without physics guidance). This subsection establishes the baseline against which the physics-informed (Section~\ref{sec:physics}) and LUSI (Section~\ref{sec:lusi}) variants are compared in Section~\ref{sec:ablation}.}
 
 
 %% ====================================================================
-%% 6. PHYSICS-INFORMED SPECTRAL PRIORS
+%% 6. OPTIONAL PHYSICS-INFORMED EXTENSIONS
 %% ====================================================================
-\section{Physics-informed spectral priors}
+\section{Physics-informed extensions}
+\label{sec:phys_extensions}
+
+The transformer described in Section~\ref{sec:architecture} is a complete classifier on its own. 
+This section presents two user-specified extensions that inject physical knowledge into training without altering the underlying architecture: (i) an attention-bias initialization derived from PCA on USGS laboratory reference spectra (Section~\ref{sec:physics}), and (ii) a Vapnik-style consistency regularizer (LUSI) that penalizes prediction drift under physically motivated transformations of the input spectrum (Section~\ref{sec:lusi}). 
+The extensions can be enabled in isolation or in combination. 
+The infusion of scientifically-accepted roots, inspires greater trust in the methodology from the HSI community. 
+Method-respective connections can be seen with the dotted line architectural insertion points in Figure \ref{fig:architecture}. 
+Effects on accuracy, attention interpretability, and cross-region generalization are evaluated in the ablation results.
+
+\subsection{Physics-informed spectral priors}
 \label{sec:physics}
 
-The attention bias $\bm{\beta}_h$ (Equation~\ref{eq:attn_score}) provides an interface for injecting domain knowledge without altering the architecture. This section describes how PCA on USGS reference spectra initializes $\bm{\beta}_h$ to guide attention toward mineralogically informative wavelengths.
+The attention bias $\bm{\beta}_h$ (Equation~\ref{eq:attn_score}) provides an interface for injecting domain knowledge without altering the architecture. 
+This subsection describes how PCA on USGS reference spectra initializes $\bm{\beta}_h$ to guide attention toward mineralogically informative wavelengths.
 
-\subsection{PCA-derived attention bias}
+\subsubsection{PCA-derived attention bias}
 \label{sec:pca_priors}
 
 The bias is initialized from PCA on $M = 93$ USGS Spectral Library Group~1 reference spectra \cite{kokaly2017usgs}, each convolved to EMIT's $L = 285$ bands. 
-Note that $M < Q_1$ because not all 95 mineral classes have a distinct laboratory reference spectrum (some classes are variants or mixtures). 
-These are the same laboratory spectra that Tetracorder uses for mineral identification \cite{clark2003tetracorder, emit_l2b_atbd}. 
-Where Tetracorder encodes spectral knowledge through hand-crafted feature-matching rules applied to surface reflectance, the PCA priors distill the reference library into a statistical summary, the principal axes of spectral variance, that biases attention toward mineralogically informative wavelengths in the TOA reflectance domain.
+Note that $M < Q_1$ because not all 95 mineral classes have a distinct laboratory reference spectrum. 
+These spectra are drawn from the same class of laboratory reference libraries used by the EMIT/Tetracorder mineral-identification pipeline, which matches continuum-normalized observed spectra to continuum-normalized library references via a fit-score and feature-depth criterion \cite{clark2003tetracorder, emit_l2b_atbd}.
+Where Tetracorder encodes spectral knowledge through hand-crafted feature-matching rules applied to surface reflectance, the PCA spectral priors distill the reference library into a statistical summary, the principal axes of spectral variance, that biases attention toward wavelengths where the laboratory library exhibits substantial mineralogical variability.
 
-A natural question is whether surface reflectance reference spectra are relevant to a model operating on TOA reflectance. Following standard radiative transfer formulations \cite{schott2007,richter_atcor_atbd,schaepman2006}, TOA reflectance for a Lambertian target can be decomposed as:
+This construction is related to, but distinct from, prior uses of PCA and attention in hyperspectral learning. 
+For example, Wang et al.~\cite{wang2021attention_pca_guided} use PCA-guided self-supervised feature extraction within an attention-based spatial--spectral network for hyperspectral change detection.
+In contrast, the approach here does not use PCA to reduce the EMIT observations or to define an auxiliary self-supervised target. 
+Instead, PCA is applied to an external, sensor-convolved mineral reference library, and the resulting absolute loadings are used to initialize an additive pre-softmax attention bias. 
+The contribution is therefore a reference-library-derived spectral prior: a soft, trainable initialization that anchors selected attention heads to mineralogically meaningful wavelength regions while allowing supervised training on TOA reflectance to refine or override the prior.
+
+There is a domain mismatch, however.
+The USGS reference spectra are laboratory surface reflectance measurements, while the model operates on TOA reflectance.
+The empirical question is whether such priors improve classification accuracy, convergence speed, or robustness relative to an unconstrained attention initialization.
+
+For a horizontally homogeneous Lambertian target, the standard radiative transfer formulation underlying atmospheric correction codes such as 6S \cite{vermote1997sixs} expresses the TOA reflectance as
 \begin{equation}
-\rho_{\text{toa}} \approx T_{\downarrow} T_{\uparrow} \rho_{\text{surface}} + \rho_{\text{path}},
+\rho_{\text{toa}}
+=
+\rho_{\text{path}}
++
+\frac{T_{\downarrow}\,T_{\uparrow}\,\rho_{\text{surface}}}{1 - S\,\rho_{\text{surface}}},
+\label{eq:toa_full}
+\end{equation}
+where $\rho_{\text{surface}}$ is the (Lambertian) surface reflectance of the target; 
+$\rho_{\text{path}}$ is the atmospheric path reflectance, the atmosphere-only contribution from photons scattered into the sensor's field of view without ever reaching the surface; 
+$T_{\downarrow}$ and $T_{\uparrow}$ are the downward (sun-to-surface) and upward (surface-to-sensor) atmospheric transmittances; 
+and $S$ is the spherical albedo of the atmosphere, which captures successive surface--atmosphere reflections. 
+For the moderate-albedo arid surfaces that dominate EMIT's mineral targets, the trapping term $S\,\rho_{\text{surface}} \ll 1$, and Equation~\ref{eq:toa_full} reduces to the first-order approximation
+\begin{equation}
+\rho_{\text{toa}} \approx T_{\downarrow}\,T_{\uparrow}\,\rho_{\text{surface}} + \rho_{\text{path}}.
 \label{eq:toa_decomp}
 \end{equation}
-where $T_{\downarrow}$ is the atmospheric transmittance along the sun-to-surface (downward) path, $T_{\uparrow}$ is the transmittance along the surface-to-sensor (upward) path, and $\rho_{\text{path}}$ is the path reflectance (the atmosphere-only contribution from photons scattered into the sensor's field of view without ever reaching the surface) \cite{richter_atcor_atbd,schaepman2006}. 
-This is a first-order approximation that neglects the higher-order atmosphere--surface multiple-scattering term, which is small for the moderate-albedo arid surfaces that dominate EMIT's mineral targets.
+This is the form invoked in operational atmospheric-correction simplifications \cite{richter_atcor_atbd}, and is the working decomposition used to motivate both the PCA spectral priors and the LUSI predicates introduced later.
 
-The key insight is that Equation~\ref{eq:toa_decomp} has an additive--multiplicative structure: the surface signal is \emph{scaled} by atmospheric transmittance and \emph{offset} by path reflectance. 
-In atmospheric windows, spectral regions away from strong gas absorption, transmittance is high ($T_{\downarrow} T_{\uparrow} \approx 0.7$--$0.95$) and varies smoothly with wavelength over the scale of narrow mineral absorption features. Path radiance decreases with wavelength due to Rayleigh scattering ($\propto \lambda^{-4}$) and is ``usually very small'' beyond 800~nm \cite{richter_atcor_atbd}. 
-The diagnostic Fe$^{3+}$ features for hematite and goethite, charge transfer at $\sim$530~nm, crystal field transitions at $\sim$670 and $\sim$860~nm \cite{clark1999,sherman1985,wang2022hyspex}, reside in precisely these windows, so their positions and relative shapes are largely preserved from surface to TOA even though absolute magnitudes change.
-In summary, the spectral shape information that distinguishes minerals survives atmospheric propagation at diagnostic wavelengths.
+The key implication of Equation~\ref{eq:toa_decomp} is that, away from strong absorption bands, atmospheric propagation approximately applies a smooth multiplicative modulation ($T_{\downarrow} T_{\uparrow}$) and an additive path-reflectance offset ($\rho_{\text{path}}$) to the surface spectrum.
+In atmospheric windows, transmittance is high ($T_{\downarrow} T_{\uparrow} \approx 0.7$--$0.95$) and varies smoothly with wavelength over the scale of narrow mineral absorption features; path radiance decreases with wavelength due to Rayleigh scattering ($\propto \lambda^{-4}$) and is ``usually very small'' beyond 800~nm \cite{richter_atcor_atbd}.
+The diagnostic Fe$^{3+}$ features for hematite and goethite span charge-transfer bands at $\sim$530~nm, crystal-field transitions at $\sim$670~nm, and a near-infrared absorption near $\sim$860~nm \cite{clark1999,sherman1985,wang2022hyspex}.
+The 860~nm feature falls in a relatively favorable region; the 530 and 670~nm features lie in the visible, where Rayleigh and aerosol path radiance are larger and where the multiplicative modulation can also be more wavelength-dependent.
+Therefore, although TOA reflectance is not equivalent to surface reflectance, the central wavelengths and local contrast structure of diagnostic mineral absorptions may remain partially preserved under moderate atmospheric loading, especially after normalization, even though absolute magnitudes and visible-band slopes can change.
+The PCA-derived bias should accordingly be interpreted not as a direct surface-reflectance template, but as a physically motivated initialization that favors wavelengths where the reference library exhibits substantial mineralogical variability.
+
+In summary, the PCA spectral priors are expected to provide a useful initialization because mineralogically meaningful spectral structure is partially preserved from surface to TOA reflectance in favorable wavelength regions, even though atmospheric scattering, absorption, adjacency effects, and illumination geometry can alter the observed TOA spectrum.
 \textcolor{red}{\textbf{TODO:} Plot USGS surface reflectance for hematite alongside EMIT TOA reflectance for hematite-labeled pixels on the same axes, to visually demonstrate how diagnostic features are preserved through the atmosphere.}
 \textcolor{red}{\textbf{TODO:} Repeat PCA analysis using only the 10 EMIT target minerals instead of the full 93-spectrum library to assess whether a focused reference set produces more discriminative priors.}
 
 \paragraph{Computation.}
-After sanitizing fill values and interpolating gaps, the reference spectra matrix $\mathbf{X}_{\text{ref}} \in \R^{M \times L}$ is mean-centered and PCA is performed. 
-The top $k$ eigenvectors $\mathbf{v}_1, \ldots, \mathbf{v}_k$ (where $k \leq H$) are converted to band-importance profiles by taking absolute values, zeroing bad bands, and z-score normalizing:
+After sanitizing fill values and interpolating gaps, the reference spectra matrix 
+$\mathbf{X}_{\mathrm{ref}} \in \R^{M \times L}$ is mean-centered and PCA is performed.
+The top $k$ eigenvectors $\mathbf{v}_1,\ldots,\mathbf{v}_k$, with $k \leq H$, are converted into band-importance profiles for initializing the attention bias. 
+For each component, the signed eigenvector is mapped to a nonnegative importance profile by taking absolute values. 
+The profile is then normalized over valid bands and invalid or unreliable bands are set to zero.
+The initial attention bias for head $h$ is then:
 \begin{equation}
-\bm{\beta}_h^{(0)} = \alpha \mathbf{b}_h, \quad h = 0, \ldots, k-1,
+\bm{\beta}_h^{(0)} = \alpha \mathbf{b}_h, 
+\qquad h = 1,\ldots,k,
 \label{eq:prior_init}
 \end{equation}
-where $\mathbf{b}_h$ is the normalized absolute eigenvector and $\alpha$ controls prior strength.
-This shifts pre-softmax attention scores, making the model initially attend to wavelengths where the reference spectra vary most.
+with remaining heads initialized without a spectral prior. 
+Here, $\alpha$ controls the strength of the prior. 
+Because $\bm{\beta}_h$ is added to the pre-softmax attention scores, this initialization nudges early attention toward wavelengths where the reference library exhibits substantial spectral variability.
 
-\paragraph{What the eigenvectors encode.}
-The first principal component of the USGS library is the direction of maximum spectral variance \emph{across minerals}, which in practice is dominated by the wavelengths where minerals most disagree with each other. 
-These are roughly the known diagnostic absorption bands (Fe$^{3+}$ at $\sim$530, 670, and 860~nm; clay OH near 2200~nm). 
-Taking the absolute value of the eigenvector, $|\mathbf{v}_1|$, yields a broadband importance profile that emphasizes ``places where minerals differ from each other on average'', a data-driven summary of the reference library that points the model toward mineralogically informative wavelengths at initialization, rather than requiring the model to discover them from scratch. 
-Subsequent components $\mathbf{v}_2, \mathbf{v}_3, \ldots$ capture progressively finer discriminative axes, allowing multiple attention heads to be seeded with complementary band-importance profiles.
+\paragraph{What the eigenvectors encode}
+The PCA eigenvectors summarize the dominant modes of variability in the convolved USGS reference library. 
+This variability may reflect diagnostic absorption features, continuum slope, albedo, grain-size effects, or differences among mineral groups; therefore, the PCA prior should not be interpreted as a direct map of discriminative wavelengths. 
+Rather, it provides an unsupervised summary of where the laboratory spectra vary most strongly.
 
-It is worth emphasizing what the PCA prior is \emph{not}.  
-After taking absolute values and z-score normalizing, $\bm{\beta}_h$ is a dimensionless band-importance vector, not a reflectance spectrum. 
-It carries no information about the shape of any specific mineral's absorption features, nor about TOA-domain variance structure (it is computed in the surface reflectance domain). 
-The bias term's role is essentially, ``if you had to guess which bands matter without knowing the minerals in advance, $|\mathbf{v}_1|$ gives you a defensible, data-driven nudge in the right direction.'' 
-It is a sensible starting point for attention, not a strong physical constraint.
-The result is a modest accuracy improvement(Section~\ref{sec:lusi_findings}).
+Taking $|\mathbf{v}_h|$ converts each signed PCA mode into a nonnegative band-importance profile. 
+Bands with large absolute loadings contribute strongly to that mode of library variability and often overlap with known diagnostic regions, such as Fe$^{3+}$ absorptions near $\sim$530, $\sim$670, and $\sim$860~nm. 
+Although the absolute-value profiles are not themselves guaranteed to be orthogonal, they are derived from mutually orthogonal PCA modes. 
+They therefore provide complementary initializations that encourage different attention heads to begin from distinct modes of spectral-library variability, rather than all querying the same wavelength structure.
+
+$\bm{\beta}_h$ is a dimensionless attention-bias vector, not a reflectance spectrum. 
+It represents variance in the convolved USGS surface-reflectance library (not the variance structure of EMIT TOA reflectance).
+Thus, the prior is best understood as a soft, physically motivated initialization that biases early attention toward wavelengths where laboratory mineral spectra tend to vary. 
+As discussed in Section~\ref{sec:ablation}, this initialization yields a small, configuration-dependent effect on accuracy alongside more spectroscopically interpretable attention patterns.
+
 \textcolor{red}{\textbf{TODO (inductive bias / faster convergence):} Demonstrate that PCA-seeded attention reaches high validation accuracy in fewer epochs than random initialization --- the model still has to learn the specifics, but it starts in a better part of parameter space. Plot validation top-1 vs.\ epoch for PCA-seeded vs.\ random-seeded configurations.}
 
 \textcolor{red}{\textbf{TODO (interpretability scaffolding):} Use attention evolution plots to show that PCA-seeded heads stay near diagnostic wavelengths while exploring around them, whereas random heads wander more widely. The PCA seed provides an anchored ``spectroscopic reference head'' that can be validated against literature --- useful for interpretability claims even when accuracy gains are modest.}
 
-\textcolor{red}{\textbf{TODO (small-data regime):} Repeat the ablation at reduced training-set sizes (e.g., $10^3$, $10^4$, $10^5$ pixels) to quantify how much PCA priors help when data is scarce. Prior experiments showed the 93-spectrum PCA underperforms at $\sim$1000 samples but matches at $\sim$1M --- this is directly relevant to the one-time-cost argument for keeping the number of SDS-processed training granules small.}
+\textcolor{red}{\textbf{TODO (small-data regime):} Repeat the ablation at reduced training-set sizes (e.g., $10^3$, $10^4$, $10^5$ pixels) to quantify how much PCA spectral priors help when data is scarce. Prior experiments showed the 93-spectrum PCA underperforms at $\sim$1000 samples but matches at $\sim$1M --- this is directly relevant to the one-time-cost argument for keeping the number of SDS-processed training granules small.}
 
-\subsection{Water vapor band masking}
+\subsubsection{Water vapor band masking}
 \label{sec:wv_mask}
 
 Atmospheric water vapor absorption at $\sim$1340--1500~nm and $\sim$1800--1960~nm dominates TOA reflectance variance but carries no mineralogical information. 
@@ -622,48 +691,44 @@ A boolean mask $\mathbf{m} \in \{0, 1\}^L$ zeroes the attention bias at atmosphe
 Without the mask, head evolution analysis shows that 6 of 8 heads devote most of their learned bias changes to suppressing H$_2$O bands. 
 With the mask, PCA-head drift decreases by $\sim$30\% and redirects toward diagnostic wavelengths.
 
-\subsection{Hybrid head allocation and freeze schedule}
+\subsubsection{Hybrid head allocation and freeze schedule}
 \label{sec:hybrid_heads}
 
-When $H > k$ PCA components, the first $k$ heads are PCA-initialized and the remaining $H - k$ heads are initialized to zero:
-\begin{equation}
-\bm{\beta}_h^{(0)} = \begin{cases}
-\alpha \mathbf{b}_h & h = 0, \ldots, k-1 \quad \text{(PCA heads)}, \\
-\mathbf{0} & h = k, \ldots, H-1 \quad \text{(non-PCA heads)}.
-\end{cases}
-\label{eq:hybrid_init}
-\end{equation}
-This matches the no-priors configuration where all biases start at zero and is consistent across cases. 
-Per the mechanical argument at Equation~\ref{eq:attn_score}, non-PCA heads begin with uniform attention and learn their own band preferences from data once training starts. Symmetry across heads is broken by the random query vectors $\mathbf{q}_h \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$, so explicit noise on the bias is unnecessary.
+When $H > k$ PCA components, the first $k$ heads are PCA-initialized and the remaining $H - k$ heads are initialized to zero. 
+Per the mechanical argument at Equation~\ref{eq:attn_score}, non-PCA heads begin with uniform attention and learn their own band preferences from data once training starts. 
+Symmetry across heads is broken by the random query vectors $\mathbf{q}_h \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$, so explicit noise on the bias is unnecessary.
 PCA heads are frozen for a user-specified initial number of epochs, allowing the classification head to learn using physics-derived features before fine-tuning begins.
 Non-PCA heads are trainable from epoch~1.
-\textcolor{red}{\textbf{TODO:} Test with frozen=120 epochs (PCA heads permanently frozen for all training) to isolate the effect of PCA priors without fine-tuning.}
+\textcolor{red}{\textbf{TODO:} Test with frozen=120 epochs (PCA heads permanently frozen for all training) to isolate the effect of PCA spectral priors without fine-tuning.}
 
 %% ====================================================================
-%% 7. LUSI CONSISTENCY REGULARIZATION
+%% 6.X LUSI CONSISTENCY REGULARIZATION (subsection of Optional extensions)
 %% ====================================================================
-\section{LUSI consistency regularization}
+\subsection{Learning Using Statistical Invariants (LUSI)-inspired consistency reglarization}
 \label{sec:lusi}
 
-Learning Using Statistical Invariants (LUSI) \cite{vapnik2020} enforces that predictions are invariant to physical transformations that should not change mineral identity. LUSI injects domain knowledge through the loss function and can be used independently or in combination with PCA priors.
+LUSI \cite{vapnik2020} enforces that predictions are invariant to physical transformations that should not change mineral identity. 
+LUSI injects domain knowledge through the loss function and can be used independently or in combination with PCA spectral priors.
 
-\subsection{Theoretical background}
+\subsubsection{Theoretical background}
 
-Vapnik and Izmailov's complete statistical theory of learning \cite{vapnik2020} extends classical empirical risk minimization by incorporating \emph{predicates}, functions $\phi_s(x)$ that encode known properties or symmetries of the data, and their corresponding \emph{statistical invariants}, constraints that any admissible solution must satisfy. 
-The key theoretical result is that as the number of predicates increases, the VC dimension of the admissible function set decreases, yielding tighter generalization bounds. 
-In classical learning, the model searches over all functions that fit the training data; 
-with LUSI, the search is restricted to functions that \emph{also} respect the predicate constraints, reducing the effective hypothesis space. 
-In practice, this means encoding domain knowledge as predicates can improve generalization even when it does not improve training-set accuracy --- precisely the behavior observed in the cross-scene evaluation (Section~\ref{sec:lusi_findings}).
+Learning Using Statistical Invariants (LUSI) uses domain knowledge to restrict the set of admissible solutions through \emph{predicates} and their corresponding \emph{statistical invariants} \cite{vapnik2020}.
+In the original theory, these invariants define additional constraints that a learned function should satisfy, thereby reducing the effective hypothesis space.
 
-The physical motivation for the specific predicates chosen here comes directly from the additive--multiplicative structure of the TOA decomposition (Equation~\ref{eq:toa_decomp}): the scale predicate $T_{\text{scale}}$ (Equation~\ref{eq:scale_predicate}) models the multiplicative $T_{\downarrow} T_{\uparrow}$ transmittance variation, while the tilt predicate $T_{\text{tilt}}$ (Equation~\ref{eq:tilt_predicate}) models the additive, wavelength-dependent $\rho_{\text{path}}$ contribution from aerosol and Rayleigh scattering.
-By enforcing invariance to these two atmospheric perturbation modes, LUSI regularization encodes the physical structure of Equation~\ref{eq:toa_decomp} into the training objective.
+The neural training setting does not directly admit hard invariant constraints.
+Instead, we implement a transformation-based approximation of this idea.
+We introduce physically motivated transformations of the input spectrum and penalize changes in the model's prediction under those transformations.
+The resulting loss encourages the classifier to ignore variability that should not change mineral identity.
+The penalty is realized as a teacher-student consistency objective borrowed from knowledge distillation \cite{hinton2015distilling}: the model's prediction on the original (untransformed) spectrum acts as a fixed \emph{teacher} target with gradients stopped, while the prediction on the transformed spectrum is the \emph{student}, trained to match the teacher.
 
-\subsection{Physical predicates}
+The physical motivation for the transformations comes from the fact that TOA reflectance is a transformed version of surface reflectance, not an equivalent quantity. Under the first-order TOA decomposition (Equation~\ref{eq:toa_decomp}), changes in illumination, atmospheric transmittance ($T_{\downarrow} T_{\uparrow}$), and path reflectance ($\rho_{\mathrm{path}}$) can alter the observed TOA spectrum without changing the underlying mineral identity. The LUSI transformations approximate these effects directly in the TOA-observation domain: the scale transformation $T_{\text{scale}}$ (Equation~\ref{eq:scale_predicate}) represents broadband multiplicative changes in brightness, while the tilt transformation $T_{\text{tilt}}$ (Equation~\ref{eq:tilt_predicate}) represents a conservative low-frequency additive spectral-slope perturbation. These transformations are therefore not an atmospheric-correction model and do not assume $\rho_{\mathrm{toa}} \approx \rho_{\mathrm{surface}}$; rather, they define label-preserving directions in TOA reflectance space along which the predicted mineral label should remain stable.
+
+\subsubsection{Physical predicates}
 \label{sec:lusi_predicates}
 
-The two predicates map directly onto the two terms in the TOA decomposition (Equation~\ref{eq:toa_decomp}):
+The two transformations approximate label-preserving modes of variation suggested by the TOA decomposition in Equation~\ref{eq:toa_decomp}:
 
-\paragraph{Illumination invariance.}
+\paragraph{Illumination invariance}
 Topographic slope and partial shadow scale TOA reflectance by a multiplicative factor without altering the diagnostic spectral shape. (Solar zenith angle is already accounted for in the TOA reflectance conversion via the $\cos\theta$ normalization in Section~\ref{sec:radiance_toa}, but a tilted surface receives more or less direct illumination than this flat-surface correction assumes.)
 \begin{equation}
 T_{\text{scale}}(\mathbf{w}) = \rho \mathbf{w}, \quad \rho \sim \mathcal{U}(0.8, 1.2).
@@ -671,13 +736,15 @@ T_{\text{scale}}(\mathbf{w}) = \rho \mathbf{w}, \quad \rho \sim \mathcal{U}(0.8,
 \end{equation}
 A uniform distribution is chosen because there is no reason to favor any particular illumination level within the range; $\pm$20\% spans the typical brightness variation from topographic slope and shadow effects observed in EMIT scenes over arid terrain. In EMIT's study regions (Sahara, Arabian Peninsula, Horn of Africa), mountain ranges and dune fields produce significant relief, making slope-induced brightness variation a common occurrence.
 
-\paragraph{Atmospheric slope invariance.}
-Aerosol loading and Rayleigh scattering add a wavelength-dependent offset that is approximately linear over the VSWIR range:
+\paragraph{Atmospheric slope invariance}
+Aerosol and Rayleigh effects can introduce low-frequency spectral-shape changes that are not diagnostic of mineral identity.
+After robust normalization, these effects are approximated by a small additive wavelength ramp:
 \begin{equation}
 T_{\text{tilt}}(\mathbf{w}) = \mathbf{w} + \xi \boldsymbol{\lambda}_{\text{grid}}, \quad \xi \sim \mathcal{N}(0, 0.01),
 \label{eq:tilt_predicate}
 \end{equation}
-where $\boldsymbol{\lambda}_{\text{grid}} = \text{linspace}(-1, 1, L)$ is a normalized wavelength ramp. A Gaussian distribution is chosen because atmospheric slope perturbations are centered on zero (no perturbation) with symmetric deviations in either direction; the small standard deviation ($\sigma = 0.01$) ensures that the tilt perturbation remains conservative relative to the robust-normalized reflectance magnitudes, approximating the effect of moderate variations in aerosol optical depth without producing unphysical spectra.
+where $\boldsymbol{\lambda}_{\text{grid}} = \mathrm{linspace}(-1, 1, L)$.
+This is not intended to be a full atmospheric model; it is a conservative label-preserving perturbation that encourages invariance to smooth spectral tilts while preserving narrow mineral absorption structure.
 
 \paragraph{Joint transformation.}
 The two predicates are applied jointly:
@@ -687,7 +754,7 @@ T_{\text{joint}}(\mathbf{w}) = \rho \mathbf{w} + \xi \boldsymbol{\lambda}_{\text
 \end{equation}
 with $\rho$ and $\xi$ sampled independently per sample.
 
-\subsection{Consistency loss}
+\subsubsection{Consistency loss}
 \label{sec:lusi_loss}
 
 The LUSI loss measures whether the model's mineral classification changes when the input spectrum is physically transformed. The model is run twice on each training batch:
@@ -695,25 +762,30 @@ The LUSI loss measures whether the model's mineral classification changes when t
   \item \textbf{Original spectrum} $\mathbf{w}_i$ (``teacher''): the untransformed input, producing prediction $\mathbf{p}_{\text{orig}} = \text{Softmax}(\text{logits}_{\text{orig}} / \tau_l) \in \R^{Q_1}$.
   \item \textbf{Transformed spectrum} $T_{\text{joint}}(\mathbf{w}_i)$ (``student''): the same pixel after applying the scale and tilt perturbations (Equation~\ref{eq:joint_transform}), producing prediction $\mathbf{p}_{\text{trans}} = \text{Softmax}(\text{logits}_{\text{trans}} / \tau_l) \in \R^{Q_1}$.
 \end{enumerate}
-If the model is truly invariant to illumination and atmospheric slope, these two predictions should be identical. The LUSI loss penalizes any disagreement via KL divergence:
+The consistency loss compares the softened prediction for the transformed spectrum to the stop-gradient prediction for the original spectrum:
 \begin{equation}
-\mathcal{L}_{\text{LUSI}} = D_{\text{KL}}(\mathbf{p}_{\text{trans}} \| \mathbf{p}_{\text{orig}}) \tau_l^2,
+\mathcal{L}_{\text{LUSI}} =
+D_{\text{KL}}\!\left(
+\mathbf{p}_{\text{orig}}^{\mathrm{sg}}
+\,\|\,
+\mathbf{p}_{\text{trans}}
+\right)\,\tau_l^{2},
 \label{eq:lusi_kl}
 \end{equation}
-where $D_{\text{KL}}(\mathbf{p} \| \mathbf{q}) = \sum_c p_c \log(p_c / q_c)$ measures how much the transformed prediction diverges from the original, and $\tau_l = 2.0$ is a temperature that softens the class distributions before comparison. The $\tau_l^2$ scaling follows the knowledge distillation convention \cite{hinton2015distilling}: higher temperature produces softer distributions with smaller KL magnitude, so the quadratic scaling compensates to maintain consistent gradient magnitude. Following the teacher-student paradigm, gradients flow only through the student (transformed) path; the teacher (original) logits are stop-gradient. This trains the student to match the teacher's prediction regardless of the physical perturbation. The total loss is:
+where $\mathbf{p}_{\text{orig}}^{\mathrm{sg}}$ denotes the original prediction with gradients stopped, $\tau_l = 2.0$ is a softening temperature, and the $\tau_l^{2}$ factor follows the knowledge-distillation convention \cite{hinton2015distilling}, compensating for the smaller KL magnitude that softer distributions produce so the gradient scale stays comparable to the cross-entropy term. The stop-gradient anchors the teacher to the model's current prediction on the clean input; this trains the transformed-input prediction to match the original-input prediction without allowing the loss to be minimized by drifting both predictions toward a shared trivial answer. The total loss is:
 \begin{equation}
 \mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \lambda_{\text{LUSI}} \mathcal{L}_{\text{LUSI}},
 \label{eq:lusi_total}
 \end{equation}
 with $\lambda_{\text{LUSI}} = 1.0$. LUSI requires two additional forward passes per batch, approximately doubling training time.
 
-\subsection{Empirical findings}
+\subsubsection{Empirical findings}
 \label{sec:lusi_findings}
 
 LUSI does not improve accuracy on the training distribution: 4-head LUSI-only (0.787) underperforms the transformer baseline (0.791), and 8-head PCA+LUSI (0.805) matches PCA-only (0.806) within noise. 
 The LUSI loss converges to $\sim$0.03, indicating the model already achieves brightness/slope invariance through standard training at the $\sim$1M pixel data scale.
 
-However, cross-scene evaluation on a geographically disjoint southwestern US test region reveals that LUSI is the only configuration that \emph{improves} on the new scene (+2.6\%), while the transformer-only model degrades ($-$1.7\%) and PCA priors degrade most ($-$5.8\%). This is consistent with Vapnik's theory that statistical invariants help when test conditions differ from training: the scale and slope predicates enforce invariances that transfer across atmospheric conditions, while PCA priors encode region-specific spectral patterns that do not.
+However, cross-scene evaluation on a geographically disjoint southwestern US test region reveals that LUSI is the only configuration that \emph{improves} on the new scene (+2.6\%), while the transformer-only model degrades ($-$1.7\%) and PCA spectral priors degrade most ($-$5.8\%). This is consistent with Vapnik's theory that statistical invariants help when test conditions differ from training: the scale and slope predicates enforce invariances that transfer across atmospheric conditions, while PCA spectral priors encode region-specific spectral patterns that do not.
 
 %% ====================================================================
 %% 6. PLACEHOLDER SECTIONS FOR FUTURE CONTENT
