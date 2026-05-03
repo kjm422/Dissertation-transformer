@@ -228,9 +228,14 @@ Notation conventions (updated 2026-04-14): $\mathbf{W}^p \in \R^{N \times L}$ fo
 
 ## Architecture Diagram
 - Source: `Disseratation_txt/PaperofPartII/test_diagram.tex` (TikZ standalone) → renders to `test_diagram.pdf` → copied to `Dissertation_images/architecture_diagram.pdf` for use in both paper and dissertation
-- Vaswani-style color palette: pink=embedding, grey=linear projection, orange=attention, light green=softmax, cyan=feed-forward, yellow=optional physics-informed components (spectral priors + LUSI), purple=loss
-- Dashed arrows = optional/conditional pathways; solid = required data flow
-- Annotations to the side of dense blocks (MLP head, spectral priors, T_joint) document internal operations without breaking out separate sub-blocks
+- All main forward-pass nodes are filled `gray!20`; color is reserved for the four group regions and for optional/loss boxes
+- Four dashed-bordered group regions wrap the forward pass and align 1:1 with paper subsections (mirrored in dissertation): (1) `sec:preprocessing` light yellow, (2) `sec:tokenization` pink (Vaswani embedding color), (3) `sec:attn_pooling` light orange (Vaswani attention color), (4) `sec:classification` light cyan (Vaswani feed-forward color). Group titles bold-set in top-left of each region
+- Yellow boxes (`bias` for spectral priors $\bm{\beta}_h$, `lusi` for $T_{\text{joint}}$ and $D_{\text{KL}}$) sit *outside* the four group regions because they augment rather than replace the base pass
+- Pink/purple boxes for losses ($\mathcal{L}_{\text{CE}}$, $\mathcal{L}_{\text{total}}$); dashed arrows = optional/conditional pathways; solid = required data flow
+- Side annotations (MLP head detail, spectral-priors detail, $T_{\text{joint}}$ formula, KL student-pass note) document internal operations without breaking out separate sub-blocks
+- Robust z-score equation $\hat{w}_j = (w_j - \text{median}(\mathbf{w}))/(\text{IQR}(\mathbf{w}) + \epsilon)$ is rendered inside the `norm` block (not just labelled)
+- Figure caption in both files names each region and links it to the matching subsection label
+- Tikz libraries used: `positioning, arrows.meta, shapes.geometric, calc, fit, backgrounds`; the `fit` library + `on background layer` is what draws the four group regions cleanly behind the nodes
 - Recompile after edits: `cd Disseratation_txt/PaperofPartII && pdflatex test_diagram.tex && cp test_diagram.pdf ../Dissertation_images/architecture_diagram.pdf`
 
 ## LUSI Findings

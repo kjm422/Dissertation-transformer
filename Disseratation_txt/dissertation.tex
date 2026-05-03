@@ -961,7 +961,7 @@ The resulting architecture is described in five stages that mirror the forward p
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\textwidth]{architecture_diagram.pdf}
-\caption{End-to-end architecture overview. Optional physics-informed components (yellow, dashed) --- spectral priors and LUSI consistency regularization --- can be toggled independently.}
+\caption{End-to-end architecture overview. The forward pass is partitioned into four shaded regions that align with Sections~\ref{sec:preprocessing} (data preprocessing and normalization), \ref{sec:tokenization} (tokenization and embedding), \ref{sec:attn_pooling} (attention pooling), and~\ref{sec:classification} (classification head). Optional physics-informed components (yellow, dashed) --- the spectral-priors attention bias $\bm{\beta}_h$ and the LUSI consistency branch --- can be toggled independently and sit outside the four shaded regions because they augment rather than replace the base forward pass.}
 \label{fig:architecture}
 \end{figure}
 
@@ -1028,10 +1028,10 @@ Where Tsai \& Philpot provided the shape-aware tokenization principle (derivativ
 \hline
 \textbf{Concept} & \textbf{Source Architecture} & \textbf{This Dissertation} \\
 \hline
-1. Local feature extraction & Tsai \& Philpot \cite{tsai1998derivative}: derivative analysis of hyperspectral data & Shape-aware tokenization \\
+1. Local feature extraction & Derivative analysis \cite{tsai1998derivative}: hyperspectral derivatives along $\lambda$ & Shape-aware tokenization \\
  & & (first/second finite differences as local spectral features) \\
 \hline
-2. Positional encoding & Vaswani et al.\ \cite{vaswani2017attention}: token position & Learnable band-position embedding \\
+2. Positional encoding & Transformer \cite{vaswani2017attention}: token position & Learnable band-position embedding \\
 \hline
 3. Asymmetric cross-attention & Perceiver: $M$ learned queries & $H$ learned query vectors ($\mathbf{q}_h$) \\
 \hline
@@ -1049,9 +1049,14 @@ Where Tsai \& Philpot provided the shape-aware tokenization principle (derivativ
 \end{tabular}
 \end{table}
 
-\subsection{Influential Work in Spectral Transformers}
+\subsection{Related spectral transformers not adopted in this work}
 
-The broader spectral transformer literature provides important context for the present work, even where the specific architectures did not directly inform the design. Table~\ref{tab:spectral_transformers} summarizes the most highly cited HSI transformer architectures, and MethaneMapper represents a notable applied contribution from NASA JPL.
+SpectralFormer \cite{hong2021spectralformer} introduced group-wise spectral embedding and cross-layer adaptive fusion for hyperspectral image classification.
+SSFTT \cite{sun2022ssftt} combined lightweight 3D/2D convolutional feature extraction with Gaussian-weighted feature tokenization before transformer encoding.
+SSTN \cite{zhong2021sstn} introduced a spectral--spatial transformer network with spatial-attention and spectral-association modules, together with a factorized architecture-search framework.
+MethaneMapper \cite{kumar2023methanemapper} demonstrated a spectral-absorption-wavelength-aware hyperspectral transformer for methane detection and quantification from AVIRIS-NG data.
+
+Table~\ref{tab:spectral_transformers} summarizes these architectures alongside HSI-BERT, with the deeper per-architecture discussion that follows.
 
 \begin{table}[htbp]
 \centering
@@ -1117,7 +1122,7 @@ The transformer addresses the limitations identified in Section~\ref{sec:part1_l
   \item \textbf{Spectral interpretability:} Attention weights $\mathbf{A}_h$ provide per-band, per-head, per-class importance scores as a direct output of the forward pass. This interpretability is a consequence of the Perceiver-style asymmetric cross-attention: each head produces a 1D attention vector over bands rather than an $L \times L$ attention matrix, making per-head spectroscopic validation possible.
   \item \textbf{Global spectral context:} Unlike 1D-CNNs with local receptive fields, cross-attention evaluates all 285 bands simultaneously, enabling long-range spectral dependencies (e.g., linking Fe$^{3+}$ charge transfer at 535~nm with crystal field transitions at 860~nm).
   \item \textbf{Linear complexity:} Following the Perceiver paradigm, learned query vectors replace self-attention, reducing complexity from $O(L^2)$ to $O(H \times L)$, where $H$ is the number of attention heads and $L = 285$ is the number of bands.
-  \item \textbf{Local-then-global processing:} Shape-aware tokenization extracts local spectral features --- first and second finite differences along the wavelength axis, in the spirit of derivative analysis of hyperspectral data \cite{tsai1998derivative} --- before the transformer evaluates global context, ensuring tokens encode absorption morphology prior to attention.
+  \item \textbf{Shape-aware tokenization:} Each band is encoded with its raw reflectance together with first and second finite differences along the wavelength axis \cite{tsai1998derivative}, so tokens carry local absorption-feature shape into the attention layer rather than reflectance alone, ensuring local spectral structure is captured before the transformer evaluates global context.
   \item \textbf{Physics injection interface:} The attention bias $\bm{\beta}_h$ provides a clean mechanism for incorporating domain knowledge without changing the architecture --- a capability absent from the source architectures (Perceiver, SpecTf) and from all HSI transformers in the literature.
   \item \textbf{Physical invariance through the loss function:} The architecture's attention mechanism learns \emph{which} bands matter, but not \emph{what should be invariant}. Mineral identity does not change under illumination scaling or atmospheric slope perturbation, yet the model has no architectural mechanism to enforce this. LUSI consistency regularization (Section~\ref{chap:lusi}) addresses this by adding a training objective that penalizes prediction changes under physically motivated transformations, encoding Vapnik's statistical invariants as domain-specific predicates. This complements the PCA priors (which guide \emph{where} to attend) with a constraint on \emph{what the learned representation should be robust to}.
 \end{itemize}

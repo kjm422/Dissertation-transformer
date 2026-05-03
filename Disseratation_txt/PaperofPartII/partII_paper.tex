@@ -317,7 +317,7 @@ We adopt this Perceiver-style cross-attention principle for spectral pooling.
 
 \paragraph{SpecTf: Per-pixel spectral modeling}
 SpecTf \cite{lee2025spectf} demonstrated that treating imaging-spectrometer measurements as 1-D spectral sequences can support accurate per-pixel cloud detection on EMIT without spatial or temporal context.
-The model significantly outperformed the operational EMIT cloud-mask baseline and achieved performance comparable to other machine-learning baselines with substantially fewer learned parameters.
+The model significantly outperformed the operational EMIT cloud-mask baseline.
 Its attention weights emphasized physically meaningful atmospheric absorption regions, motivating the per-pixel spectral-only modeling strategy adopted here.
 
 \begin{table}[htbp]
@@ -328,7 +328,7 @@ Its attention weights emphasized physically meaningful atmospheric absorption re
 \hline
 \textbf{This Work} & \textbf{Source} \\
 \hline
-1.\ Shape-aware tokenization via spectral derivatives & Tsai \& Philpot \cite{tsai1998derivative} \\
+1.\ Shape-aware tokenization via spectral derivatives & Derivative analysis \cite{tsai1998derivative} \\
 2.\ Asymmetric cross-attention with $H$ learned queries ($\mathbf{q}_h$) & Perceiver \cite{jaegle2021perceiver} \\
 3.\ Cross-attention sequence pooling ($\mathbf{z}_{\text{cat}}$) & Perceiver \cite{jaegle2021perceiver} \\
 4.\ Per-pixel spectral classification (no spatial context) & SpecTf \cite{lee2025spectf} \\
@@ -337,48 +337,43 @@ Its attention weights emphasized physically meaningful atmospheric absorption re
 \end{tabular}
 \end{table}
 
-\subsection{Other influential spectral transformers, not utilized in this work}
+The architectures reviewed above all assume atmospherically corrected input or target atmospheric phenomena rather than surface mineralogy. 
+To the authors' knowledge, no prior spectral transformer attempts HSI mineral classification directly from L1B TOA reflectance, with the speed and reliability enabled by the RTM bypass and the physics-informed components described in this paper.
+The architecture described in the next section addresses the implementation.
 
-SpectralFormer \cite{hong2021spectralformer} introduced group-wise spectral embedding and cross-layer adaptive fusion. SSFTT \cite{sun2022ssftt} combined lightweight 3D/2D CNNs with Gaussian-weighted tokenization. SSTN \cite{zhong2021sstn} factorized attention into parallel spatial and spectral modules. MethaneMapper \cite{kumar2023methanemapper} demonstrated spectral absorption-aware attention for methane detection from AVIRIS-NG data.
-
-\subsection{Gap: RTM-bypass via spectral transformers}
-
-Existing spectral transformer architectures, like those discussed above, operate on atmospherically corrected surface reflectance or target atmospheric phenomena rather than surface mineralogy from uncorrected observations.
-At petabyte scale, and for applications requiring low-latency, real-time, or onboard inference, this per-pixel iterative retrieval is a critical computational bottleneck.
-
-The architecture presented is, to the authors' knowledge, the first spectral transformer attempting mineral classification from TOA reflectance without atmospheric correction.
-The motivation is to eliminate the inference-time bottleneck the RTM imposes.
-By learning the L1B-to-L2B mapping directly from a small set of SDS-processed training granules, the approach pays the full SDS cost only once.
-The cross-attention design with physics-informed spectral priors and statistical invariance regularization enables learning mineral features in the presence of atmospheric interference, and per-head attention analysis provides spectroscopic validation.
-The approach treats SDS outputs as noisy labels of true mineral classes and learns to map from L1B sensor observations directly to these labels, eliminating the iterative retrieval step at inference.
 %% ====================================================================
 %% 5. ARCHITECTURE
 %% ====================================================================
 \section{Architecture}
 \label{sec:architecture}
 
-The proposed architecture is a cross-attention transformer designed specifically for per-pixel spectral classification from hyperspectral TOA reflectance. It departs from conventional self-attention transformers (which were designed for natural language and images) in three substantive ways: the queries are learned rather than derived from the input; the attention bias provides a physics-injection interface for reference-spectra priors; and the loss function accommodates statistical invariants drawn from physically motivated perturbations of TOA reflectance. Key architectural features include:
-\begin{itemize}
+The proposed architecture is a cross-attention transformer designed specifically for per-pixel spectral classification from hyperspectral TOA reflectance. 
+It departs from conventional self-attention transformers (which were designed for natural language and images) in three substantive ways: 
+the queries are learned rather than derived from the input; the attention bias provides a physics-injection interface for reference-spectra priors; and the loss function accommodates statistical invariants drawn from physically motivated perturbations of TOA reflectance. 
+Key architectural features include:
+\begin{enumerate}
+  \item \textbf{Shape-aware tokenization:} Each band is encoded with its raw reflectance together with first and second finite differences along $\lambda$, so tokens carry local absorption-feature shape into the attention layer rather than reflectance alone \cite{tsai1998derivative}.
   \item \textbf{Learned spectral queries:} Unlike self-attention transformers, this architecture probes the spectral sequence with learned templates, reducing complexity from $O(L^2)$ to $O(H \times L)$.
   \item \textbf{Spectral infusion priors:} USGS reference spectra initialize attention bias via PCA to steer heads toward diagnostic absorption features.
   \item \textbf{Statistical invariants:} Learning Using Statistical Invariants (LUSI) enforces robustness against illumination shifts and aerosol scattering.
-\end{itemize}
-The remainder of this section formalizes the notation, walks through preprocessing, tokenization, attention pooling, classification head, and optimization, and summarizes the parameter budget. Figure~\ref{fig:architecture} provides a full pipeline overview.
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\textwidth]{architecture_diagram.pdf}
-\caption{End-to-end architecture overview. Optional physics-informed components (yellow boxes, dashed lines) can be toggled independently.}
-\label{fig:architecture}
-\end{figure}
-
-\subsection{Notation}
-
+\end{enumerate}
+The remainder of this section formalizes the notation, walks through preprocessing, tokenization, attention pooling, classification head, and optimization, and summarizes the parameter budget. 
 Table~\ref{tab:notation} summarizes the key symbols used throughout the remainder of this paper.
+Figure~\ref{fig:architecture} provides a full pipeline overview.
 
-\begin{table}[htbp]
+\subsection{Data preprocessing and normalization}
+\label{sec:preprocessing}
+
+All operations in this subsection (label preparation, robust z-score normalization, the learnable per-band affine, and spectral derivatives) are performed in the \emph{original $L$-dimensional reflectance space}. 
+No embedding or projection into a higher-dimensional latent space happens until tokenization (Section~\ref{sec:tokenization}). 
+The model sees one scalar per band at this stage.
+
+The training data consists of $N = 1{,}260{,}203$ class-balanced pixels drawn from EMIT L1B TOA reflectance observations over Africa and the Middle East (the set of 396 granules), split 90/10 into training and validation sets with a fixed random seed.
+Each pixel has $L = 285$ spectral bands and a Group~1 mineral class label from the EMIT SDS pipeline.
+
+\begin{table}[H]
 \centering
-\caption{Summary of notation.}
+\caption{Summary of key notation.}
 \label{tab:notation}
 \begin{tabular}{ll}
 \hline
@@ -408,30 +403,23 @@ $\tau_l$ & LUSI consistency loss temperature \\
 \end{tabular}
 \end{table}
 
-\subsection{Data preprocessing and normalization}
-\label{sec:preprocessing}
-
-All operations in this subsection (label preparation, robust z-score normalization, the learnable per-band affine, and spectral derivatives) are performed in the \emph{original $L$-dimensional reflectance space}. 
-No embedding or projection into a higher-dimensional latent space happens until tokenization (Section~\ref{sec:tokenization}). 
-The model sees one scalar per band at this stage.
-
-The training data consists of $N = 1{,}260{,}203$ class-balanced pixels drawn from EMIT L1B TOA reflectance observations over Africa and the Middle East, split 90/10 into training and validation sets with a fixed random seed.
-Each pixel has $L = 285$ spectral bands and a Group~1 mineral class label from the EMIT SDS pipeline.
-
 The raw distribution of Tetracorder-assigned Group~1 mineral IDs across the 396 source granules is highly imbalanced (Figure~\ref{fig:g1_hist}), spanning several orders of magnitude between the most and least populated classes.
 The most prevalent class is goethite (ID~8, 162~million pixels), followed by hematite-goethite mixtures and nano-hematite variants (IDs 45--47); the top nine populated classes are all iron-bearing minerals, consistent with EMIT's mission focus on iron-oxide-rich arid dust source regions \cite{emit_factsheet}.
-Three of the 95 expected Group~1 IDs are entirely absent in the study region (IDs 1, 72, and 74, corresponding to a green plastic tarp reference, staurolite, and augite respectively), so 92 of 95 classes are populated. 
+Three of the 95 expected Group~1 IDs are entirely absent in the study region (IDs 1, 72, and 74, corresponding to a green plastic tarp reference, staurolite, and augite respectively), so 92 of 95 classes are populated.
 To prevent the model from collapsing onto the dominant classes, a stratified per-class cap of 7{,}500 pixels is applied during sampling.
 Even after capping, 20 of the 92 populated Group~1 classes fall short of the 7{,}500 target, ranging from a single pixel for ID~83 to 1{,}328 pixels for ID~90.
-This residual imbalance is a somewhat unavoidable consequence of the natural distribution of surface mineralogy in arid dust source regions: rare minerals are not present in enough pixels to reach the per-class cap.
-Additional samples from other arid regions could have filled the imbalance, but recall that the desire is to train on a small set of representative granules in a single geographic region and transfer the learning to other geographic areas.
+This residual imbalance is a somewhat unavoidable consequence of the natural distribution of surface mineralogy in arid dust source regions.
+Rare minerals are not present in enough pixels to reach the per-class cap.
+Additional samples from other arid regions could have filled the imbalance, but recall that the desire is to train on an early small set of representative granules in a single geographic region and transfer the learning to other geographic areas.
 
-\begin{figure}[htbp]
+\begin{wrapfigure}{r}{0.7\textwidth}
 \centering
-\includegraphics[width=0.85\textwidth]{G1_orig_samphist.png}
+\vspace{-1em}
+\includegraphics[width=\linewidth]{G1_orig_samphist.png}
 \caption{Group~1 mineral ID distribution before and after stratified sampling. The stratified sample with a 7{,}500 per-class cap flattens this distribution so every populated class is represented.}
 \label{fig:g1_hist}
-\end{figure}
+\vspace{-1em}
+\end{wrapfigure}
 
 \paragraph{Label preparation}
 Class 0 (unclassified, assigned by Tetracorder to pixels where no mineral produces a sufficiently high fit score) is filtered, and labels are shifted to $0 \ldots 94$ for zero-indexed cross-entropy loss.
@@ -446,15 +434,18 @@ Per-band robust z-score normalization is computed on the training split only:
 where $\tilde{\mu}_j$ is the per-band median and $\sigma_{\text{IQR},j} = Q_{75,j} - Q_{25,j}$ is the interquartile range. 
 Median-IQR normalization is chosen over mean-standard deviation because TOA reflectance distributions are heavy-tailed-- atmospheric path radiance, sub-pixel cloud contamination, and shadow effects produce outliers that inflate the standard deviation. 
 The same statistics are applied to the validation split and at inference.
-
-A learned per-band affine transform is applied in the forward pass:
-\begin{equation}
-\hat{w}'_j = \gamma_j \hat{w}_j + \delta_j,
-\label{eq:learnable_scale}
-\end{equation}
-where $\gamma_j$ and $\delta_j$ are trainable parameters initialized to 1 and 0, respectively. 
+A learned per-band affine transform $\hat{w}'_j = \gamma_j \hat{w}_j + \delta_j$ is applied in the forward pass, where $\gamma_j$ and $\delta_j$ are trainable parameters initialized to 1 and 0, respectively.
 This adds per-band learnable scale and shift that the model can adjust during training to give certain bands more or less weight in the downstream feature path. 
 This feature allows the model to normalize for numerical stability, then let it recover the scaling actually useful for the task.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\textwidth]{architecture_diagram.pdf}
+\caption{End-to-end architecture overview. The forward pass is partitioned into four shaded regions that align with Sections~\ref{sec:preprocessing} (data preprocessing and normalization), \ref{sec:tokenization} (tokenization and embedding), \ref{sec:attn_pooling} (attention pooling), and~\ref{sec:classification} (classification head). 
+Optional physics-informed components (yellow boxes, dashed lines). the spectral-priors attention bias and the LUSI consistency branch, can be toggled independently.}
+\label{fig:architecture}
+\end{figure}
+
 
 \paragraph{Spectral derivatives.}
 Finite-difference derivatives encode local absorption feature morphology:

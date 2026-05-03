@@ -2,57 +2,59 @@
 
 \usepackage{amsmath, amssymb, bm}
 \usepackage{tikz}
-\usetikzlibrary{positioning, arrows.meta, shapes.geometric, calc}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, calc, fit, backgrounds}
 
 \newcommand{\R}{\mathbb{R}}
 
 \begin{document}
 
 \begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=5mm,
+  font=\small,
+  node distance=4mm,
   >=Stealth,
   % "Attention is all you need"-style color palette:
-  block/.style   ={draw, rounded corners=1pt, minimum width=32mm, minimum height=7mm, align=center},
-  embed/.style   ={draw, fill=pink!40,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % embeddings
-  attn/.style    ={draw, fill=orange!35, rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % attention
-  ff/.style      ={draw, fill=cyan!25,   rounded corners=1pt, minimum width=32mm, minimum height=7mm, align=center}, % feed-forward
-  linear/.style  ={draw, fill=gray!25,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % linear layers
-  softmax/.style ={draw, fill=green!30,  rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % softmax
-  tensor/.style  ={draw, fill=white,     rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % data-flow tensors
-  queryv/.style  ={draw, fill=orange!35, rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % learned queries (attention input)
-  bias/.style    ={draw, fill=yellow!25, rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % physics prior (optional, same family as LUSI)
+  block/.style   ={draw, fill=gray!20, rounded corners=1pt, minimum width=32mm, minimum height=7mm, align=center},
+  embed/.style   ={draw, fill=gray!20,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % embeddings
+  attn/.style    ={draw, fill=gray!20,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % attention
+  ff/.style      ={draw, fill=gray!20,   rounded corners=1pt, minimum width=32mm, minimum height=7mm, align=center}, % feed-forward
+  linear/.style  ={draw, fill=gray!20,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % linear layers
+  softmax/.style ={draw, fill=gray!20,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % softmax
+  tensor/.style  ={draw, fill=gray!20,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % data-flow tensors
+  queryv/.style  ={draw, fill=gray!20,   rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % learned queries (attention input)
+  bias/.style    ={draw, fill=yellow!25, rounded corners=1pt, minimum width=28mm, minimum height=6mm, align=center}, % physics prior (optional)
   lusi/.style    ={draw, fill=yellow!25, rounded corners=1pt, minimum width=30mm, minimum height=6mm, align=center}, % LUSI branch (optional)
-  loss/.style    ={draw, fill=purple!15, rounded corners=1pt, minimum width=32mm, minimum height=7mm, align=center}, % loss boxes
+  loss/.style    ={draw, fill=purple!30,   rounded corners=1pt, minimum width=32mm, minimum height=7mm, align=center}, % loss boxes
   op/.style      ={draw, circle, minimum size=5mm, inner sep=0pt},
   arrow/.style   ={-Stealth, thick},
+  group/.style   ={draw=gray!60, dashed, rounded corners=3pt, inner sep=4mm, fill=blue!3},
+  grouptitle/.style ={font=\small\bfseries, text=gray!50!black, anchor=north west},
 ]
 
 % --- Input & preprocessing ---
-\node[block, fill=gray!10]          (spec) {Pixel spectrum $\mathbf{w}_i \in \R^{L},\ L=285$};
+\node[block]                        (spec) {Pixel spectrum $\mathbf{w}_i \in \R^{L},\ L=285$};
 \node[font=\small\bfseries, left=3mm of spec] (startlabel) {start};
-\node[block, above=of spec]         (norm) {Robust z-score};
+\node[block, above=of spec]         (norm) {Robust z-score\\ $\hat{w}_j = (w_j - \text{median}(\mathbf{w}))/(\text{IQR}(\mathbf{w}) + \epsilon)$};
 \node[tensor, above=of norm]        (uj)   {Per-band features $\mathbf{u}_j = [\hat{w}'_j,\, \Delta\hat{w}_j,\, \Delta^2\hat{w}_j]^T \in \R^3$};
 
 % --- Split embedding (content + position) ---
-\node[embed, above left =6mm and -4mm of uj] (cj) {Content embed\\ $\mathbf{c}_j = \text{Linear}(\mathbf{u}_j) \in \R^{d/2}$};
-\node[embed, above right=6mm and -4mm of uj] (pj) {Positional embed\\ $\mathbf{p}_j = \text{Emb}_{\text{pos}}(j) \in \R^{d/2}$};
-\node[op,    above=9mm of uj]       (cat1) {$\oplus$};
+\node[embed, above left =5mm and -4mm of uj] (cj) {Content embed\\ $\mathbf{c}_j = \text{Linear}(\mathbf{u}_j) \in \R^{d/2}$};
+\node[embed, above right=5mm and -4mm of uj] (pj) {Positional embed\\ $\mathbf{p}_j = \text{Emb}_{\text{pos}}(j) \in \R^{d/2}$};
+\node[op,    above=7mm of uj]       (cat1) {$\oplus$};
 \node[linear, above=of cat1]        (Win)  {$\mathbf{W}_{\text{in}}$ $+$ LayerNorm};
 \node[embed, above=of Win]          (E)    {Token embeddings $\mathbf{E} \in \R^{L \times d}$};
 
 % --- K, V projections + separate learned queries ---
-\node[linear, above left =8mm and -4mm of E] (K) {$\mathbf{K} = \mathbf{E}\mathbf{W}_K$};
-\node[linear, above right=8mm and -4mm of E] (V) {$\mathbf{V} = \mathbf{E}\mathbf{W}_V$};
+\node[linear, above left =6mm and -4mm of E] (K) {$\mathbf{K} = \mathbf{E}\mathbf{W}_K$};
+\node[linear, above right=6mm and -4mm of E] (V) {$\mathbf{V} = \mathbf{E}\mathbf{W}_V$};
 \node[queryv, right=16.5mm of V]      (q) {Learned queries\\ $\mathbf{q}_1,\ldots,\mathbf{q}_H$};
 
 % --- Cross-attention pipeline ---
 \node[attn, above=of K]             (score) {Score: $\mathbf{K}\mathbf{q}_h/\sqrt{d}\ +\ \bm{\beta}_h$};
 \node[bias,  left=10mm of score]    (beta)  {$\bm{\beta}_h$ (spectral priors)};
-\node[font=\scriptsize\itshape, text=gray!60!black, align=center, below=2mm of beta]
+\node[font=\scriptsize\itshape, text=gray!60!black, align=center, below=1mm of beta]
       (betadetail)
       {USGS ref.\ $\mathbf{X}_{\text{ref}} \in \R^{M \times L}$\\
-       PCA $\to$ top-$k$ eigenvectors $\mathbf{v}_h$\\
+       PCA $\to$ top-$k$ e-vectors $\mathbf{v}_h$\\
        $\mathbf{b}_h = \text{z-score}(|\mathbf{v}_h|)$\\
        $\bm{\beta}_h^{(0)} = \alpha\, \mathbf{b}_h$};
 \node[softmax, above=of score]      (sm)    {Softmax / $\tau_a$};
@@ -72,17 +74,17 @@
 
 % --- Losses ---
 \node[loss, above=of out]            (ce)   {$\mathcal{L}_{\text{CE}}$ (cross-entropy)};
-\node[loss, fill=purple!30, above=7mm of ce]  (total){$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \lambda_{\text{LUSI}}\,\mathcal{L}_{\text{LUSI}}$};
+\node[loss, fill=purple!50, above=5mm of ce]  (total){$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \lambda_{\text{LUSI}}\,\mathcal{L}_{\text{LUSI}}$};
 
 % --- LUSI branch (optional, dashed) ---
 \node[lusi,  right=32mm of spec]    (T)    {LUSI: $T_{\text{joint}}(\mathbf{w}_i)$};
 \node[font=\scriptsize\itshape, text=gray!60!black, align=left, anchor=south west]
-      at ($(T.north west) + (-17mm, 1mm)$)
+      at ($(T.north east) + (-15mm, 1mm)$)
       (Tdetail)
       {$T_{\text{joint}}(\mathbf{w}) = \rho \mathbf{w} + \xi \bm{\lambda}_{\text{grid}}$};
 \node[lusi,  right=42mm of out]     (kl)   {$\mathcal{L}_{\text{LUSI}} = D_{\text{KL}}(\cdot \| \cdot)$};
 \node[font=\scriptsize\itshape, text=gray!60!black, align=left, anchor=north west]
-      at ($(kl.south east) + (-13mm, -2mm)$)
+      at ($(kl.south east) + (-13mm, -1mm)$)
       (kldetail) {student pass $\to \mathbf{p}_{\text{trans}}$};
 
 % --- Main arrows ---
@@ -108,6 +110,21 @@
 \draw[arrow, dashed] (T) -- (kl);
 \draw[arrow, dashed] (out) -- node[above, font=\scriptsize\itshape, text=gray!60!black] {teacher pass $\to \mathbf{p}_{\text{orig}}$} (kl);
 \draw[arrow, dashed] (kl.north) |- (total.east);
+
+% --- Group boxes (drawn on background so they sit behind the nodes) ---
+%   Coloring follows "Attention is all you need" (Vaswani et al., 2017):
+%     embeddings -> pink, multi-head attention -> orange, feed-forward -> cyan.
+%     Pre-processing has no Vaswani analog; a neutral light tan is used.
+\begin{scope}[on background layer]
+  \node[group, fill=yellow!8,  fit=(spec)(norm)(uj)] (g1) {};
+  \node[group, fill=pink!45,   fit=(cj)(pj)(cat1)(Win)(E)] (g2) {};
+  \node[group, fill=orange!10, fit=(K)(V)(q)(score)(sm)(A)(pool)] (g3) {};
+  \node[group, fill=cyan!10,   fit=(cat2)(zcat)(mlp)(mlpdetail)(out)] (g4) {};
+\end{scope}
+\node[grouptitle] at ([xshift=2mm,yshift=2mm]g1.south east) {1.\ Data pre-Processing \& Normalization};
+\node[grouptitle] at ([xshift=2mm,yshift=6mm]g2.south east) {2.\ Tokenization \& Embeddings};
+\node[grouptitle] at ([xshift=2mm,yshift=6mm]g3.south east) {3.\ Attention Pooling};
+\node[grouptitle] at ([xshift=8mm,yshift=10mm]g4.south east) {4.\ Classification};
 
 \end{tikzpicture}
 
