@@ -248,7 +248,7 @@ LUSI does not improve accuracy in any configuration tested:
 - Conclusion: explicit invariance regularization is redundant at ~1M pixel data scale
 
 ## Broken-PCA-Prior Finding (2026-05-03)
-The legacy `physics_mode=pca` pipeline (r14/r15) silently produces nonsense priors when run on the 93-spectrum Group-1 file. Root cause is in `make_pca_priors_from_ref` ([spectral_trans_withqoi_attentionr15_pcalusi.py:291](kelli_scripts/spectral_trans_withqoi_attentionr15_pcalusi.py#L291)):
+The legacy `physics_mode=pca` pipeline (r14, retained in r17 for backward-compatibility runs) silently produces nonsense priors when run on the 93-spectrum Group-1 file. Root cause is in `make_pca_priors_from_ref` (the carried-forward implementation in [spectral_trans_withqoi_attentionr17_pcalusi.py](kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py)):
 ```python
 fill = _find_fill_mask(X, absmax=absmax)
 bad_band_mask = fill.any(axis=0)        # flags any band where ANY spectrum has a fill
