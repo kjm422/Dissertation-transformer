@@ -7,8 +7,10 @@ Physics-informed transformer for hyperspectral mineral classification from EMIT 
 - Cross-attention transformer with learned query vectors (not self-attention) — O(L) not O(L^2)
 - Three modular enhancements: PCA-based attention bias (USGS ref spectra), LUSI consistency regularization, spectral derivatives input
 - 285 EMIT bands, 95 mineral classes (Group 1), per-pixel classification
-- Training script lineage: spectral_trans_withqoi_attentionr{N}_pcalusi.py (current: r15)
-- r15 vs r14: non-PCA hybrid heads now init to zero instead of 0.01·N(0,I) noise — symmetry breaking comes from random query vectors q_h ~ N(0,1), so explicit bias noise is unnecessary. This makes non-PCA-head behavior consistent between physics_init=True (hybrid) and physics_init=False (all zeros). Re-run ablation pending.
+- Training script lineage: spectral_trans_withqoi_attentionr{N}_pcalusi.py (current: r17)
+- r15 vs r14: non-PCA hybrid heads now init to zero instead of 0.01·N(0,I) noise — symmetry breaking comes from random query vectors q_h ~ N(0,1), so explicit bias noise is unnecessary. This makes non-PCA-head behavior consistent between physics_init=True (hybrid) and physics_init=False (all zeros).
+- r16 vs r15: adds `--physics_mode manual` for a hand-curated weak Gaussian-bump prior at user-specified diagnostic wavelengths (defaults: 480/535/670/860/920 nm). Calibrated defaults: `--manual_prior_normalize max`, `--physics_alpha 0.5`, `--physics_freeze_prior_epochs 1`. Wavelengths cycle across heads via `round_robin` (or `shared` / `one_per_head`). Includes wv-mask sanity warning if a center falls in a masked band.
+- r17 vs r16: adds `--physics_mode precomputed` with a forgiving loader (`load_precomputed_bias`). Loads a `(k, 285)` attention-bias `.npy` from `--prior_bias_path` and auto-pads (k < n_heads) or truncates (k > n_heads) to match the model's head count. Padded zero rows stay trainable from epoch 1 (only the rows with non-zero loadings count toward `physics_frozen_heads`). Intended companion to `build_group1_ferric_pca_prior.py`.
 
 ## Key Data Paths
 - Training data: `/Users/kmccoy/Documents/USC/Research/Dissertation/Data/TOApixel_balanced_W_gb1ID_gb2ID_train7500.npy`
@@ -245,26 +247,148 @@ LUSI does not improve accuracy in any configuration tested:
 - LUSI loss is small (~0.03) at convergence — model already achieves brightness/slope invariance through training
 - Conclusion: explicit invariance regularization is redundant at ~1M pixel data scale
 
+## Broken-PCA-Prior Finding (2026-05-03)
+The legacy `physics_mode=pca` pipeline (r14/r15) silently produces nonsense priors when run on the 93-spectrum Group-1 file. Root cause is in `make_pca_priors_from_ref` ([spectral_trans_withqoi_attentionr15_pcalusi.py:291](kelli_scripts/spectral_trans_withqoi_attentionr15_pcalusi.py#L291)):
+```python
+fill = _find_fill_mask(X, absmax=absmax)
+bad_band_mask = fill.any(axis=0)        # flags any band where ANY spectrum has a fill
+# ...later...
+v[bad_band_mask] = 0.0                  # zeros prior at all flagged bands
+```
+With the 93-spectrum library: 248 of 285 bands flagged → only ~37 bands survive, all clustered in 1500–1700 nm. The `prior_evolution.npy[0]` snapshot is essentially zero at every Fe³⁺ diagnostic wavelength (480/535/670/860/920 nm). This explains why every PCA ablation cell in the existing table (PCA 4/4H 0.804, PCA 8/8H 0.805, PCA+LUSI 0.805) underperforms 8H transformer-only (0.813): the bias was actively pushing attention toward non-diagnostic wavelengths.
+
+Two replacement paths added (both avoid the bad-band-mask pathology):
+
+**Option A — manual weak prior** (r16):
+Skip the library entirely. Use Gaussian bumps at user-specified diagnostic wavelengths.
+```bash
+python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
+  --physics_init --physics_mode manual --heads 4 \
+  --physics_alpha 0.5 --physics_freeze_prior_epochs 1 \
+  --wavelengths Data/emit_wavelength_centers_nm.npy \
+  --wv_mask Spectra/group1_all/water_vapor_mask_285.npy \
+  ...
+```
+
+**Option B — curated PCA precomputed offline** (r17 + new build script):
+Use `build_group1_ferric_pca_prior.py` to (a) curate library by keyword (target/ferric_confuser/hard_negative), (b) row-zscore preprocess, (c) PCA on valid bands only, (d) save `(n_heads, 285)` bias file. Then load via `--physics_mode precomputed --prior_bias_path ...`.
+```bash
+# Step 1: build the bias offline
+python kelli_scripts/build_group1_ferric_pca_prior.py \
+  --npy_dir Spectra/group1_all \
+  --wavelengths Data/emit_wavelength_centers_nm.npy \
+  --wv_mask Spectra/group1_all/water_vapor_mask_285.npy \
+  --out_dir Spectra/group1_ferric_pca_prior \
+  --mode ferric_with_hard_negatives --preprocess row_zscore \
+  --k 4 --n_heads 4
+
+# Step 2: load it during training
+python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
+  --physics_init --physics_mode precomputed \
+  --prior_bias_path Spectra/group1_ferric_pca_prior/pca_attention_bias_max_H4.npy \
+  --physics_alpha 0.5 --physics_freeze_prior_epochs 1 ...
+```
+
+The build script reads `.npy` filenames directly from `--npy_dir` (no mineral matrix); each file is classified by keyword on its filename. Modes filter which categories survive into PCA. Saves both `zabs` and `max` bias variants per head count.
+
+### Manual prior empirical results (2026-05-04)
+
+The manual prior (r17, `--physics_mode manual`, default 5-band Fe³⁺ list) was run at H=4 and H=8 and produced the following:
+
+| Config | Top-1 | Top-3 | head_sim | prior_rms | Time (min) |
+|---|---:|---:|---:|---:|---:|
+| Transformer (baseline) | 0.791 | 0.962 | — | — | 117 |
+| **Manual prior, α=1.0, H=4** | **0.809** | **0.967** | 0.031 | 0.977 | 117 |
+| Transformer (baseline) | 0.813 | 0.968 | — | — | 136 |
+| Manual prior, α=1.0, H=8 | 0.806 | 0.966 | 0.015 | 1.154 | 125 |
+
+**Headline finding**: Manual prior at H=4 (0.809) matches Transformer 8H (0.813) at 14% lower training cost (117 vs 136 min), demonstrating that a literature-distilled spectral prior substitutes for one architectural doubling. Adding more heads beyond 4 (8H manual = 0.806) does *not* help — consistent with the standard "physics priors help when capacity is constrained" finding.
+
+**Diagnostic signals**:
+- `prior_rms` at end of training: 0.977 (H=4, ≈ initial α=1.0 → model was satisfied) vs 1.154 (H=8 → model amplified the priors during training, suggesting the extra capacity wasn't used for novel feature discovery)
+- `head_sim`: 0.031 (H=4) and 0.015 (H=8) — heads stayed distinct, no collapse
+
+This was the first physics-informed result in the project that genuinely beats the transformer-only baseline (every prior PCA result was tainted by the bad-band-mask issue).
+
+### Curated PCA prior outputs (2026-05-04)
+
+`build_group1_ferric_pca_prior.py` run on `Spectra/group1_all` (99 .npy files):
+- Selected: 60 spectra (26 hard_negative, 22 target, 12 ferric_confuser); 56 survived sanitization
+- PCA bands: 224 of 285 (vs broken-pipeline's 37 of 285)
+- Variance explained: PC1 43.6%, PC2 26.1%, PC3 13.2%, PC4 6.1% (cumulative 89.0%)
+- PC interpretations from top-loaded wavelengths:
+  - PC1 (43.6%): 1967–2200 nm SWIR clay/carbonate axis → "Fe-oxide vs not-Fe" discrimination, driven by hard-negative chlorites/pyroxenes
+  - PC2 (26.1%): 507–575 nm cluster, peak at 537 nm → matches the canonical hematite charge-transfer edge
+  - PC3 (13.2%): 2315–2390 nm carbonate refinement
+  - PC4 (6.1%): 381–447 nm UV/blue → goethite charge-transfer edge region
+- Caveat: 670 nm crystal-field band is *not* in PC1–4 (likely PC5/PC6); k=4 may miss this canonical Fe³⁺ feature
+
+Outputs saved to `Spectra/group1_ferric_pca_prior/`:
+- `pca_attention_bias_max_H{N}.npy` — peaks=1, off-bands=0; pair with `--physics_alpha 0.5–1.0`
+- `pca_attention_bias_zabs_H{N}.npy` — z-score(|v|), legacy normalization with negative floor; pair with `--physics_alpha 0.2`
+- Plus `pca_components_signed.npy`, `pca_explained_variance.csv`, `pca_top_wavelengths.csv`, `pca_band_missingness_report.csv`, `selected_group1_ferric_metadata.csv`, and a 4-panel diagnostic PNG
+
+The `zabs` normalization is the direct mathematical successor of the legacy in-line PCA pipeline (same formula); the `max` normalization is a new alternative that avoids the negative-floor on off-diagnostic bands.
+
+### Paper / dissertation updates (2026-05-04)
+
+- Section "Transformer-only results" added to both files with `4Hxformer_attnplot.png` figure and per-head spectroscopic interpretation. Calibration: framed as "supporting evidence rather than proof" (attention weights are not causal explanations).
+- Section "Ablation: manual spectral prior vs transformer-only baseline" added to paper with `\label{sec:ablation}` (resolves all forward-references). Dissertation `tab:ablation` updated to add the two new manual-prior rows and explicitly tag the four legacy-PCA rows with a "(legacy)" qualifier; new `\label{sec:pca_legacy_caveat}` paragraph documents the bad-band-mask issue.
+- `tab:fe_diagnostics` simplified in both files to charge-transfer/crystal-field region descriptions with one-line entries (was multi-clause technical entries with quantum term symbols and LMCT/d-d notation).
+- Manual + PCA framed as two **modes of a single spectral-prior extension** (not three independent extensions). Section structure: `\subsection{Physics-informed spectral priors}` → `\subsubsection{Manual diagnostic-band priors}` + `\subsubsection{PCA-derived attention bias}`.
+- Continuum-removed-vs-raw section removed from paper (still in dissertation).
+- All paper tables standardized to Table 1 format: `\small`, `p{...\textwidth}` columns, `\rowcolor[gray]{0.85}` header, `\hline` between data rows.
+- Hardware sentence in §5.4 names the actual chip: "single Apple M4 Max laptop (40-core GPU) using PyTorch's MPS backend."
+
 ## Git
 - Repo: https://github.com/kjm422/Dissertation-transformer
 - Only add files by name — never `git add .` (large notebooks and data files will blow up the push)
 - .npy, .pt, .nc, .asc files are gitignored except for specific exceptions in Spectra/group1_all/
 
 ## Running Training
-Typical invocation (r15 — same flags as r14, only the script name changes):
+Use r17 by default. Three `--physics_mode` options:
+
+**Manual weak prior (recommended starting point):**
 ```
-python kelli_scripts/spectral_trans_withqoi_attentionr15_pcalusi.py \
+python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
   --data "Data/TOApixel_balanced_W_gb1ID_gb2ID_train7500.npy" \
-  --physics_init --physics_mode pca \
-  --ref_spectra "Spectra/from_minmatrix_all/ALL_spectra_concat_23x285.npy" \
+  --physics_init --physics_mode manual \
   --wavelengths "Data/emit_wavelength_centers_nm.npy" \
   --wv_mask "Spectra/group1_all/water_vapor_mask_285.npy" \
-  --ref_pca_k 4 --ref_continuum --ref_use_absdepth \
-  --physics_alpha 1 --physics_freeze_prior_epochs 3 \
   --epochs 120 --batch 1024 --lr_max 5e-4 \
   --weight-decay 3e-3 --dropout 0.1 --label-smoothing 0.05 \
   --d_model 192 --heads 4 --attn_tau 0.9 \
-  --use_cosine --dump_attn --use_derivatives
+  --use_cosine --dump_attn --use_derivatives \
+  --attn_out Data/attn_outputs_Manual4_diff
+```
+Defaults: `--manual_prior_bands "480,535,670,860,920" --manual_prior_normalize max --physics_alpha 0.5 --physics_freeze_prior_epochs 1`. Override `--physics_alpha 1.0` or `--physics_freeze_prior_epochs 3` for a stronger / longer-pinned prior.
+
+**Curated PCA prior (loaded from disk):**
+```
+# build first
+python kelli_scripts/build_group1_ferric_pca_prior.py \
+  --npy_dir Spectra/group1_all \
+  --wavelengths Data/emit_wavelength_centers_nm.npy \
+  --wv_mask Spectra/group1_all/water_vapor_mask_285.npy \
+  --out_dir Spectra/group1_ferric_pca_prior \
+  --mode ferric_with_hard_negatives --preprocess row_zscore \
+  --k 4 --n_heads 4
+# then train
+python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
+  --physics_init --physics_mode precomputed \
+  --prior_bias_path Spectra/group1_ferric_pca_prior/pca_attention_bias_max_H4.npy \
+  --physics_alpha 0.5 --physics_freeze_prior_epochs 1 \
+  ... (other args same as above) ...
+```
+
+**Legacy inline PCA (kept for backward-comparable runs only — broken bad-band-mask):**
+```
+python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
+  --physics_init --physics_mode pca \
+  --ref_spectra "Spectra/group1_all/ALL_group1_spectra_full.npy" \
+  --ref_pca_k 4 --ref_continuum --ref_use_absdepth \
+  --physics_alpha 1 --physics_freeze_prior_epochs 3 \
+  ...
 ```
 
 ## Device

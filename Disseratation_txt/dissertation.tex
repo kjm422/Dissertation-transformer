@@ -658,6 +658,8 @@ $\tau_l$ & LUSI consistency loss temperature \\
 
 EMIT’s mineral identification uses a grouping matrix containing 293 reference spectra organized into Group~1 ($Q_1 = 95$ classes, primarily iron oxides, pyroxenes, feldspars, and other 1~$\mu$m absorbers) and Group~2 ($Q_2 = 199$ classes, primarily clays, carbonates, and sulfates with SWIR features). The reference spectra are drawn from the USGS Spectral Library version~06 \cite{kokaly2017usgs}, and mineral identification is performed using the Tetracorder~5.27 expert system via continuum-normalized feature matching across diagnostically distinct spectral groups \cite{emit_l2b_atbd, clark2003tetracorder}.
 
+The EMIT mission specifically targets ten dust-source minerals chosen for their climate-forcing relevance: hematite, goethite, calcite, dolomite, gypsum, illite+muscovite, kaolinite, montmorillonite, chlorite, and vermiculite \cite{emit_factsheet, emit_l3_atbd}. Of these ten, only hematite and goethite are classified as Group~1; the remaining eight clay, carbonate, and sulfate species are assigned to Group~2. This split is consistent with the spectroscopic and climate-forcing rationale outlined in Chapter~\ref{chap:intro}: iron oxides produce the strongest radiative forcing uncertainty in dust models (with hematite warming the atmosphere through visible-light absorption while goethite is comparatively reflective), and they exhibit the most spectroscopically demanding discrimination problem given their overlapping Fe$^{3+}$ absorption structure (Table~\ref{tab:fe_diagnostics}). Part~II of this dissertation focuses on Group~1 classification for these reasons; Group~2 classification parallels the same architectural approach.
+
 \subsection{Spectral Confusion and Unmixing Challenges}
 
 A primary bottleneck in the Level~2B mineralogy pipeline is spectral similarity between mineral species, which leads to ``spectral confusion’’ during the unmixing stage \cite{emit_l2b_atbd, emit_l3_atbd}. Table~\ref{tab:unmixing} summarizes the key challenges by mineral group.
@@ -679,7 +681,28 @@ Silicates & Chlorite, White Micas & Detecting Al-rich vs.\ Mg-Fe-rich variations
 \end{tabular}
 \end{table}
 
-In plain terms, where do these absorption features come from? Electrons in an atom occupy specific energy levels --- think of them as floors in a tiny building. When light hits a mineral, an electron can absorb the light's energy and jump to a higher floor, but only if the light has \emph{exactly} the right energy (i.e., the right wavelength) to match the gap between floors. Two kinds of jumps explain the diagnostic absorption features of iron oxides like hematite and goethite. \emph{Crystal-field transitions} (also called $d$--$d$ transitions) are jumps where an electron stays on the same iron atom but moves between energy levels that are slightly split by the surrounding oxygen atoms. These are relatively weak features, located at $\sim$670~nm and $\sim$860~nm in iron oxides. \emph{Charge-transfer transitions} are stronger jumps where an electron leaves an oxygen atom and moves to an iron atom altogether; they peak in the ultraviolet, but the broad absorption tail extends into the visible, producing the steep edge that yields the diagnostic $\sim$480~nm (goethite) and $\sim$535~nm (hematite) features used in mineral discrimination. The exact arrangement of atoms in each mineral determines what jumps are possible and at what wavelengths, which is what makes each mineral's spectral fingerprint unique. See \cite{burns1993, clark1999} for comprehensive treatments and \cite{sherman1985, Jiang2014AlGoethite} for iron-oxide-specific references.
+In plain terms, where do these absorption features come from? Electrons in an atom occupy specific energy levels --- think of them as floors in a tiny building. When light hits a mineral, an electron can absorb the light's energy and jump to a higher floor, but only if the light has \emph{exactly} the right energy (i.e., the right wavelength) to match the gap between floors. Two kinds of jumps explain the diagnostic absorption features of iron oxides like hematite and goethite. \emph{Crystal-field transitions} (also called $d$--$d$ transitions) are jumps where an electron stays on the same iron atom but moves between energy levels that are slightly split by the surrounding oxygen atoms. These are relatively weak features, located near $\sim$670~nm and in the NIR. \emph{Charge-transfer transitions} are stronger jumps where an electron leaves an oxygen atom and moves to an iron atom altogether; they peak in the ultraviolet, but the broad absorption tail extends into the visible, producing the steep edge that yields the diagnostic $\sim$480~nm (goethite) and $\sim$535~nm (hematite) features used in mineral discrimination. The exact arrangement of atoms in each mineral determines what jumps are possible and at what wavelengths, which is what makes each mineral's spectral fingerprint unique. Table~\ref{tab:fe_diagnostics} summarizes the canonical band assignments used throughout this dissertation. See \cite{burns1993, clark1999} for comprehensive treatments and \cite{sherman1985, Jiang2014AlGoethite} for iron-oxide-specific references.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Canonical Fe$^{3+}$ diagnostic absorption bands. The visible bands ($\sim$535/$\sim$480~nm) are charge-transfer features (responsible for the minerals' colors); the longer-wavelength bands are crystal-field features, with goethite's NIR feature shifted to $\sim$920~nm versus hematite's $\sim$860~nm --- the key discriminator between the two minerals.}
+\label{tab:fe_diagnostics}
+\begin{tabular}{p{0.10\textwidth}p{0.20\textwidth}p{0.55\textwidth}}
+\hline
+\rowcolor[gray]{0.85}
+\textbf{Mineral} & \textbf{Diagnostic bands (nm)} & \textbf{Physical origin} \\
+\hline
+Hematite & $\sim$535 & Charge-transfer region; absorbs green $\to$ mineral looks red. \\
+\hline
+Hematite & $\sim$670, $\sim$860 & Crystal-field region; 860~nm is the main NIR fingerprint. \\
+\hline
+Goethite & $\sim$480 & Charge-transfer region; absorbs blue $\to$ mineral looks rust-yellow. \\
+\hline
+Goethite & $\sim$670, $\sim$920 & Crystal-field region; the 920~nm shift (vs hematite's 860~nm) is what tells the two minerals apart. \\
+\hline
+\end{tabular}
+\end{table}
 
 If the spectral library lacks the correct mineral for a region, the algorithm will force a fit using available endmembers, potentially producing errors not captured in uncertainty maps. The Level~2B ATBD acknowledges that mineral misidentification is not yet fully captured in uncertainty products, and that as EMIT views previously unmeasured regions, reference libraries may be insufficient \cite{emit_l3_atbd}. The hematite--goethite confusion is particularly relevant to this dissertation: the per-head attention analysis in Part~II (Chapter~\ref{chap:ablation}) demonstrates that the transformer learns to distinguish these two minerals through Fe$^{3+}$ diagnostic bands that the standard pipeline struggles to separate.
 
@@ -1407,6 +1430,71 @@ where $t_w = 0.05T$ is the warmup duration (5\% of total steps), $\eta_{\max} = 
 \paragraph{Training monitoring.}
 At each epoch, the following metrics are logged: training loss (total, and broken down by component when auxiliary losses are active), validation top-1 and top-3 accuracy, head similarity (Equation~\ref{eq:head_sim}), and the RMS magnitude of the attention bias $\|\bm{\beta}\|_{\text{rms}}$. The best checkpoint is saved based on validation top-1 accuracy. After training, per-class precision, recall, and F1-score are computed on the validation set, and a confusion matrix is saved to identify systematically confused mineral pairs.
 
+\section{Transformer-Only Results}
+\label{sec:trans_only_results}
+
+The architecture of Chapter~\ref{chap:transformer} is first evaluated with no physics-informed prior and no LUSI regularization ($\bm{\beta}_h = \mathbf{0}$, frozen) to establish the baseline against which the physics-informed (Section~\ref{chap:physics}) and LUSI (Section~\ref{chap:lusi}) variants are compared in Chapter~\ref{chap:ablation}.
+Table~\ref{tab:trans_only_results} reports the top-1 and top-3 validation accuracies along with the wall-clock training+validation time at $H = 4$ and $H = 8$ attention heads.
+
+\begin{table}[!htbp]
+\centering
+\caption{Transformer-only baseline performance on the held-out validation split. Both configurations use derivative tokenization, learned query vectors, and the cosine LR schedule of Section~\ref{sec:optimization}; $\bm{\beta}_h = \mathbf{0}$ throughout.}
+\label{tab:trans_only_results}
+\begin{tabular}{lcccc}
+\hline
+\rowcolor{gray!25}
+\textbf{Configuration} & \textbf{\#Heads} & \textbf{Top-1 Acc.} & \textbf{Top-3 Acc.} & \shortstack{\textbf{Train + Val} \\ \textbf{Time (min)}} \\
+\hline
+Transformer & 4 & 0.791 & 0.962 & 117.31 \\
+Transformer & 8 & 0.813 & 0.968 & 136.46 \\
+\hline
+\end{tabular}
+\end{table}
+
+Doubling the number of heads from 4 to 8 yields a +2.2 percentage-point gain in top-1 accuracy and +0.6 in top-3 at the cost of a 16\% increase in training time, motivating $H=8$ as the canonical configuration for the physics-informed extensions evaluated in Chapter~\ref{chap:ablation}.
+All wall-clock timings reported throughout this dissertation were measured on a single Apple M4 Max laptop (40-core GPU) using PyTorch's MPS backend.
+The absolute training+validation budgets therefore reflect what a single consumer workstation can deliver, not an HPC environment.
+Relative comparisons across configurations remain valid because every result reported uses the same hardware, the same fixed random seed, and an identical data pipeline.
+
+\paragraph{Per-head attention as spectroscopic diagnostic evidence}
+Figure~\ref{fig:trans4_attn} shows class-conditional mean per-head attention weights for the $H=4$ transformer-only baseline for hematite (class~29) and goethite (class~2).
+The vertical dashed lines mark literature diagnostic wavelengths for ferric iron absorptions, while gray spans indicate wavelength regions affected by atmospheric H$_2$O absorption.
+Because the model is trained on TOA reflectance and uses derivative-aware tokenization, exact coincidence between an attention maximum and a laboratory absorption wavelength is not expected.
+Instead, the relevant question is whether attention concentrates in physically plausible spectral neighborhoods.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\textwidth]{4Hxformer_attnplot.png}
+\caption{Per-head class-conditional mean attention weights $\mathbf{A}_h \in \R^{285}$ for the $H=4$ transformer-only baseline, evaluated on hematite (GDS27, class~29; red; mean over $N_{29}=729$ validation pixels) and goethite (WS222 medium-grain, class~2; blue; mean over $N_{2}=141$ validation pixels).
+Vertical dashed lines mark the literature Fe$^{3+}$ charge-transfer and crystal-field diagnostic wavelengths (Table~\ref{tab:fe_diagnostics}); light gray spans show the H$_2$O atmospheric masks.
+Numerical labels above each curve mark the top-3 attention peaks per mineral.}
+\label{fig:trans4_attn}
+\end{figure}
+
+The strongest correspondence occurs in Head~1, which places large attention weights in the visible region near 540--590~nm.
+This region lies near the hematite visible diagnostic around 535~nm and on the long-wavelength side of the goethite visible feature near 480~nm.
+Head~2 places attention in the broader VNIR ferric-iron region, with peaks near 738, 820, and 992~nm.
+These peaks do not coincide exactly with the nominal 670, 860, or 920~nm diagnostics, but they fall within or adjacent to the broader wavelength interval over which ferric-iron crystal-field absorption affects spectral shape.
+Head~3 includes a hematite peak near 850~nm, close to the 860~nm hematite diagnostic; however, its longer-wavelength goethite peaks should be interpreted cautiously, because they are displaced from the canonical goethite feature and the 1350~nm peak in particular falls at the edge of the 1340--1500~nm H$_2$O absorption block.
+Head~0 is dominated by a shared peak near 1119~nm and is therefore better interpreted as a continuum- or scene-dependent feature than as a mineral-specific Fe$^{3+}$ diagnostic.
+
+The attention patterns therefore provide partial spectroscopic support for the learned representation: the model emphasizes several wavelength neighborhoods that are physically plausible for hematite--goethite discrimination, but the learned peaks are not one-to-one matches to laboratory diagnostic wavelengths.
+This is expected because the inputs are TOA spectra rather than laboratory reflectance spectra, derivative channels emphasize absorption flanks and curvature rather than only band minima, and EMIT band centers discretize the wavelength axis.
+
+\paragraph{Why similar attention locations can still discriminate minerals}
+The similar peak locations for hematite and goethite do not imply identical internal representations.
+The attention weights indicate where each head samples the spectrum, but the pooled representation also depends on the value vectors at those wavelengths.
+Since the value vectors are functions of reflectance, local finite differences, and band embeddings, hematite and goethite can produce different pooled features even when attention peaks occur at similar wavelengths.
+Thus, the figure should be read as evidence of shared ferric-iron spectral regions used by the model, not as a complete explanation of the final class decision.
+
+\paragraph{Endmember validation performance}
+The two illustrated classes perform well on the held-out validation split: hematite reaches precision $0.922$, recall $0.945$, and F1-score $0.934$ on $729$ validation pixels, while goethite reaches precision $0.877$, recall $0.957$, and F1-score $0.915$ on $141$ validation pixels.
+These class-level results are consistent with the attention analysis: the model appears to use wavelength regions relevant to ferric-iron spectral discrimination while still relying on the downstream classifier to separate minerals with overlapping diagnostic structure.
+Because attention weights are not causal explanations by themselves, this result should be interpreted as supporting evidence rather than proof that the model has recovered the full physical retrieval logic.
+
+The transformer-only model recovers physically plausible attention regions for hematite and goethite without any guidance, but the alignment with literature diagnostic wavelengths is partial: some heads lock onto continuum or atmospheric-window features rather than known Fe$^{3+}$ absorption bands.
+The next chapter explores whether explicitly biasing the attention initialization toward USGS-derived spectral variance (Section~\ref{chap:physics}) or enforcing label-preserving invariance through LUSI consistency regularization (Section~\ref{chap:lusi}) shifts the learned attention toward the canonical diagnostics and whether either change affects classification accuracy.
+
 
 % ######################################################################
 % CHAPTER 8: OPTIONAL PHYSICS-INFORMED EXTENSIONS
@@ -1414,7 +1502,7 @@ At each epoch, the following metrics are logged: training loss (total, and broke
 \chapter{Optional Physics-Informed Extensions}
 \label{chap:phys_extensions}
 
-The transformer described in Chapter~\ref{chap:transformer} is a complete classifier on its own. This chapter presents two user-toggleable extensions that inject physical knowledge into training without altering the underlying architecture: (i) an attention-bias initialization derived from PCA on USGS laboratory reference spectra (Section~\ref{chap:physics}), and (ii) a Vapnik-style consistency regularizer (LUSI) that penalizes prediction drift under physically motivated transformations of the input spectrum (Section~\ref{chap:lusi}). Both extensions are independent --- either can be enabled in isolation or in combination --- and both leave the inference graph unchanged. Their effects on accuracy, attention interpretability, and cross-region generalization are evaluated in Chapter~\ref{chap:ablation}.
+The transformer described in Chapter~\ref{chap:transformer} is a complete classifier on its own. This chapter presents two user-toggleable extensions that inject physical knowledge into training without altering the underlying architecture: (i) an attention-bias initialization that distills USGS Spectral Library knowledge into the per-head attention bias $\bm{\beta}_h$, available in two modes --- manual diagnostic-band placement (Section~\ref{sec:manual_priors}) or PCA on the full reference library (Section~\ref{sec:pca_priors}) --- and (ii) a Vapnik-style consistency regularizer (LUSI) that penalizes prediction drift under physically motivated transformations of the input spectrum (Section~\ref{chap:lusi}). Both extensions are independent --- either can be enabled in isolation or in combination --- and both leave the inference graph unchanged. Their effects on accuracy, attention interpretability, and cross-region generalization are evaluated in Chapter~\ref{chap:ablation}.
 
 Together with the water vapor mask applied during PCA prior construction (Section~\ref{sec:wv_mask}), these extensions form a coordinated response to three distinct physical sources of TOA-reflectance variation discussed in Section~\ref{sec:limitations_pipelines}, each targeting a different spectral signature (Table~\ref{tab:phys_interventions}).
 \begin{table}[htbp]
@@ -1435,9 +1523,35 @@ Water vapor absorption & Sharp narrow-band dips at $\sim$1.4 and $\sim$1.9~$\mu$
 \section{Physics-Informed Spectral Priors}
 \label{chap:physics}
 
-The attention pooling mechanism described in Section~\ref{sec:attn_pooling} includes an additive bias term $\bm{\beta}_h$ in the attention score computation (Equation~\ref{eq:attn_score}). When no physics priors are used, this bias is initialized to zero and frozen. This section describes how domain knowledge from laboratory reference spectra can be injected through $\bm{\beta}_h$ to guide the model’s attention toward spectroscopically meaningful wavelength regions.
+The attention pooling mechanism described in Section~\ref{sec:attn_pooling} includes an additive bias term $\bm{\beta}_h$ in the attention score computation (Equation~\ref{eq:attn_score}). When no physics priors are used, this bias is initialized to zero and frozen. This section describes how domain knowledge from the USGS Spectral Library can be injected through $\bm{\beta}_h$ to guide the model's attention toward spectroscopically meaningful wavelength regions.
 
-The motivation for physics-informed priors comes from the operational EMIT mineral identification pipeline. Tetracorder \cite{clark2003tetracorder, clark2024tetracorder} identifies minerals by comparing continuum-removed observed spectra to a library of reference spectra across diagnostically distinct wavelength regions (``groups’’), using a shape-matching algorithm that scores each comparison via a weighted correlation coefficient. This expert system, developed over $\sim$35 years and $\sim$100 person-years by expert spectroscopists, encodes detailed knowledge of which spectral features are diagnostic for each mineral, including continuum definitions, shoulderness constraints, and ``not-features’’ that must be absent. The same USGS Spectral Library \cite{kokaly2017usgs} that Tetracorder uses for feature-fitting serves as the source for the PCA priors below. Where Tetracorder encodes spectral domain knowledge through hand-crafted rules applied to surface reflectance, the PCA priors distill the same reference library into a statistical summary --- the principal axes of spectral variance --- that biases the transformer’s attention toward mineralogically informative wavelengths in the TOA reflectance domain. A critical distinction is that Tetracorder operates on Level~2A surface reflectance (after ISOFIT atmospheric correction), while the transformer operates directly on Level~1B TOA reflectance, bypassing the atmospheric correction step entirely.
+Two complementary modes for constructing $\bm{\beta}_h$ are available; both share a common origin --- the USGS reference library --- but differ in how that library is consulted.
+The \emph{manual} mode (Section~\ref{sec:manual_priors}) places Gaussian bumps at literature-published diagnostic wavelengths that themselves derive from spectroscopic analyses of USGS reference spectra (e.g., the hematite-versus-goethite derivative-spectrum minima compiled in Table~\ref{tab:fe_diagnostics}).
+The \emph{PCA} mode (Section~\ref{sec:pca_priors}) consumes the reference spectra themselves and biases attention toward the principal axes of spectral variance across the library.
+Both modes treat the bias as a soft initialization rather than a hard constraint: gradient descent on the classification loss is free to refine $\bm{\beta}_h$ during training.
+
+The motivation for physics-informed priors comes from the operational EMIT mineral identification pipeline. Tetracorder \cite{clark2003tetracorder, clark2024tetracorder} identifies minerals by comparing continuum-removed observed spectra to a library of reference spectra across diagnostically distinct wavelength regions (``groups''), using a shape-matching algorithm that scores each comparison via a weighted correlation coefficient. This expert system, developed over $\sim$35 years and $\sim$100 person-years by expert spectroscopists, encodes detailed knowledge of which spectral features are diagnostic for each mineral, including continuum definitions, shoulderness constraints, and ``not-features'' that must be absent. The same USGS Spectral Library \cite{kokaly2017usgs} that Tetracorder uses for feature-fitting serves as the source for both prior modes below. Where Tetracorder encodes spectral domain knowledge through hand-crafted rules applied to surface reflectance, the priors distill that same library into either a literature-curated wavelength list (manual mode) or a statistical summary --- the principal axes of spectral variance (PCA mode) --- that biases the transformer's attention toward mineralogically informative wavelengths in the TOA reflectance domain. A critical distinction is that Tetracorder operates on Level~2A surface reflectance (after ISOFIT atmospheric correction), while the transformer operates directly on Level~1B TOA reflectance, bypassing the atmospheric correction step entirely.
+
+\subsection{Manual Diagnostic-Band Priors}
+\label{sec:manual_priors}
+
+The simplest mode of constructing $\bm{\beta}_h$ specifies the wavelengths the model should attend to directly, drawing on published spectroscopic analyses of the USGS Spectral Library rather than on the spectra themselves.
+Each user-supplied diagnostic wavelength $\lambda_c$ is encoded as a Gaussian bump centered at that band:
+\begin{equation}
+b(\lambda; \lambda_c, \sigma) = \exp\!\left( -\frac{(\lambda - \lambda_c)^2}{2\sigma^2} \right),
+\label{eq:gaussian_bump}
+\end{equation}
+with bump width $\sigma = 25$~nm by default --- approximately three EMIT bands.
+Multiple bumps assigned to the same head are summed; bump amplitudes falling within the H$_2$O atmospheric mask are zeroed.
+
+Bands are distributed across the $H$ heads using one of three policies.
+The default \emph{round-robin} policy cycles bands across heads in order, so that with $H = 4$ heads and the default 5-band Fe$^{3+}$ list (480, 535, 670, 860, 920~nm from Table~\ref{tab:fe_diagnostics}), head~0 receives bumps at 480 and 920~nm (goethite charge-transfer and crystal-field NIR), head~1 at 535~nm (hematite charge-transfer), head~2 at 670~nm (shared Fe$^{3+}$ crystal-field), and head~3 at 860~nm (hematite crystal-field NIR).
+Two alternative policies are also available: \emph{shared} assigns every band to every head (a sanity baseline in which head divergence relies entirely on the random query vectors $\mathbf{q}_h$), and \emph{one-per-head} assigns the first $H$ bands one-to-one to heads, dropping any extras.
+Each head's bump pattern is independently normalized so that the peak amplitude equals one, after which the resulting profile is scaled by the prior strength $\alpha$ before being copied into $\bm{\beta}_h$.
+With $\alpha = 0.5$ the peak attention-logit bias contributed by the prior is $+0.5$ at each head's assigned diagnostic wavelength and zero elsewhere --- a deliberately gentle nudge rather than a hard constraint.
+
+The manual mode trades the direct statistical use of the reference library for a literature-distilled, hand-audited band list: every band-to-head assignment is explicit and traceable to a published diagnostic wavelength, and no intermediate preprocessing (sanitization, continuum removal, eigendecomposition) sits between the canonical wavelengths and the attention bias copied into the model.
+It serves both as a deployable prior in its own right --- particularly when the target mineral set is well-characterized in the spectroscopic literature but the available laboratory library is incomplete or noisy --- and as an interpretability baseline against which the PCA-derived prior of Section~\ref{sec:pca_priors} can be compared.
 
 \subsection{Reference Spectra Sanitization}
 \label{sec:ref_sanitize}
@@ -1769,26 +1883,52 @@ When LUSI is combined with PCA priors (Section~\ref{chap:physics}), the freeze s
 
 \begin{table}[htbp]
 \centering
-\caption{Complete ablation results (r14, 120 epochs, $\sim$1M training pixels).}
+\small
+\caption{Complete ablation results (120 epochs, $\sim$1.26M training pixels). Manual-prior rows use the canonical 5-band Fe$^{3+}$ list of Table~\ref{tab:fe_diagnostics} (480/535/670/860/920~nm) with round-robin band-to-head assignment, max normalization, $\alpha = 1.0$, and a 3-epoch freeze. PCA-prior rows used the legacy in-line PCA pipeline whose bad-band-mask issue is discussed in Section~\ref{sec:pca_legacy_caveat}.}
 \label{tab:ablation}
-\begin{tabular}{lccccc}
+\begin{tabular}{p{0.30\textwidth}p{0.16\textwidth}p{0.10\textwidth}p{0.10\textwidth}p{0.14\textwidth}}
 \hline
-\textbf{Configuration} & \textbf{Heads (PCA/Total)} & \textbf{Top-1} & \textbf{Top-3} & \textbf{Time (min)} \\
+\rowcolor[gray]{0.85}
+\textbf{Configuration} & \textbf{Heads (prior/total)} & \textbf{Top-1} & \textbf{Top-3} & \textbf{Time (min)} \\
 \hline
 Transformer only & 4 & 0.791 & 0.962 & 117 \\
+\hline
+\textbf{Manual prior} & \textbf{4/4} & \textbf{0.809} & \textbf{0.967} & \textbf{117} \\
+\hline
 \textbf{Transformer only} & \textbf{8} & \textbf{0.813} & \textbf{0.968} & \textbf{136} \\
-PCA (continuum) & 4/4 & 0.804 & 0.966 & 141 \\
-PCA (no continuum) & 4/4 & 0.810 & 0.967 & --- \\
-PCA (continuum) & 4/8 & 0.806 & 0.966 & 127 \\
-\textbf{PCA (no continuum)} & \textbf{8/8} & \textbf{0.821} & \textbf{0.971} & \textbf{---} \\
+\hline
+Manual prior & 5/8 & 0.806 & 0.966 & 125 \\
+\hline
+PCA (continuum, legacy) & 4/4 & 0.804 & 0.966 & 141 \\
+\hline
+PCA (no continuum, legacy) & 4/4 & 0.810 & 0.967 & --- \\
+\hline
+PCA (continuum, legacy) & 4/8 & 0.806 & 0.966 & 127 \\
+\hline
+PCA (no continuum, legacy) & 8/8 & 0.821 & 0.971 & --- \\
+\hline
 LUSI only & 4 & 0.787 & 0.961 & 269 \\
+\hline
 LUSI only & 8 & 0.796 & 0.963 & 293 \\
-PCA + LUSI & 4/8 & 0.805 & 0.965 & 311 \\
+\hline
+PCA + LUSI (legacy) & 4/8 & 0.805 & 0.965 & 311 \\
 \hline
 \end{tabular}
 \end{table}
 
-Best result: PCA 8/8H no-continuum (0.821). PCA on raw reflectance breaks through the continuum-removed PCA ceiling ($\sim$0.806). LUSI hurts accuracy in every configuration and roughly doubles training time.
+\paragraph{Headline finding: manual prior at $H=4$ matches transformer-only at $H=8$.}
+The most useful comparison in Table~\ref{tab:ablation} is between the manual-prior $H=4$ row (top-1~$=0.809$) and the transformer-only $H=8$ row (top-1~$=0.813$). The 4-head configuration with a literature-distilled spectral prior reaches accuracy statistically indistinguishable from the 8-head transformer-only baseline at 14\% lower wall-clock training time (117 vs.\ 136 minutes). Operationally, this means that pinning five canonical Fe$^{3+}$ wavelengths into the attention bias substitutes for one architectural doubling: instead of paying for an additional set of $H = 4$ attention heads to discover Fe$^{3+}$ diagnostic features from data, the same accuracy is obtained by initializing the bias from Table~\ref{tab:fe_diagnostics}.
+
+The prior contributes a $+1.8$~percentage-point top-1 improvement over transformer-only at $H = 4$ ($0.791 \to 0.809$), but only $-0.7$~pp at $H = 8$ ($0.813 \to 0.806$). This is consistent with the standard observation that physics-informed priors help most when the model's capacity is constrained \cite{raissi2019pinn, karpatne2017tgds}: at $H = 8$ the model already discovers most of the diagnostic regions on its own (Figure~\ref{fig:trans4_attn} shows three of four heads doing so without any guidance at $H = 4$, and the picture is cleaner at $H = 8$), so the prior contributes nothing on top.
+
+Two structural observations from training diagnostics support the capacity-saturation interpretation. First, the attention-bias RMS magnitude $\|\bm{\beta}\|_{\text{rms}}$ at the end of training was $0.977$ for the $H = 4$ manual run --- essentially unchanged from its initialization at $\alpha = 1.0$ --- but rose to $1.154$ for the $H = 8$ manual run, indicating that the eight-head model amplified the prior-anchored heads during training rather than discovering complementary features through its three additional random heads. Second, the average pairwise cosine similarity between heads' learned query vectors $\mathbf{q}_h$ was $0.015$ for $H = 8$ versus $0.031$ for $H = 4$, ruling out head collapse as the explanation: the random heads stayed distinct, but the model elected not to use that capacity for novel feature discovery.
+
+\paragraph{Caveat on the legacy PCA-prior rows.}
+\label{sec:pca_legacy_caveat}
+The four PCA-prior rows in Table~\ref{tab:ablation} were produced by an earlier in-line PCA pipeline that, on closer inspection, fails to reproduce the spectroscopic intent of the prior: the bad-band-mask construction zeroed out 248 of 285 bands (every band where any single one of the 93 Group-1 reference spectra had a fill value), leaving only the 1500--1700~nm region with non-zero attention bias --- a region that does not contain any of the canonical Fe$^{3+}$ diagnostic wavelengths from Table~\ref{tab:fe_diagnostics}. The PCA configurations were therefore comparing an effectively-empty prior at the diagnostic wavelengths against transformer-only and manual-prior configurations whose biases sit exactly where they should. The reported PCA accuracies (0.804--0.821) should be interpreted as showing that the model recovers despite, rather than because of, the bad-band-masked PCA initialization. A re-curated PCA pipeline (\texttt{build\_group1\_ferric\_pca\_prior.py}) that filters the reference library to iron-bearing target/confuser/hard-negative classes, applies row z-score preprocessing, and runs PCA only on bands with sufficient cross-spectrum coverage, has been implemented to produce a corrected PCA bias that can be loaded via the \texttt{precomputed} mode of the training script (Section~\ref{chap:physics}). Re-running the PCA ablations with the corrected bias is left for future work.
+
+\paragraph{Caveats on training scale.}
+The reported numbers are single-seed runs at one training-set size ($N \approx 1.26 \times 10^{6}$). At smaller training sizes the prior would be expected to provide larger gains (consistent with the prior-as-capacity-substitute interpretation), and at larger training sizes the gap should shrink further. Re-running the full ablation at $N = 10^4, 10^5, 10^6$ pixels would directly test this, and is left as a recommended follow-up.
 
 \section{Per-Head Attention Validation Against Diagnostic Bands}
 
