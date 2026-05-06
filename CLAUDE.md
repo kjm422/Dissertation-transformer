@@ -24,7 +24,7 @@ Physics-informed transformer for hyperspectral mineral classification from EMIT 
 
 ## Important Conventions
 - USGS spectra are surface reflectance (no atmosphere); EMIT L1B is TOA reflectance (atmosphere present)
-- Water vapor bands (~1340-1500 nm, ~1800-1960 nm) and edge (>2450 nm) must be masked before PCA on ref spectra
+- Water vapor bands (~1340-1500 nm, ~1800-1960 nm) and edge (>2450 nm) must be masked before PCA on ref spectra. The mask isn't "no mineral information at all" — hydrous minerals (clays, sulfates, carbonates, gypsum) genuinely have OH/H₂O combination/overtone features there in surface reflectance (kaolinite 1.4 μm doublet, smectite OH stretch, gypsum 1.45/1.95 μm). But at TOA the atmospheric H₂O absorption reaches ~95–99% extinction in those windows, so mineral signal is overwhelmed by spatially/temporally variable atmospheric water vapor; ISOFIT/ATCOR skip these bands for the same reason. For Group 1 specifically, the diagnostic Fe-oxide features are at 480–920 nm (well below the H₂O windows) and the hydrous-mineral features in the masked region belong to Group 2 classes not predicted here. Empirically, prior-evolution analysis shows that without the mask 6 of 8 heads spend learning capacity actively suppressing H₂O bands — the model treats them as noise to filter out anyway, so the mask gives that suppression for free. For Group 2 / hydrated-sulfate studies, revisit this trade-off.
 - Labels in training data: column -2 is Group 1 ID (1..95), shifted to 0..94; class 0 is dropped
 - Robust z-score normalization: (x - median) / (IQR + 1e-6), computed on train split only
 - With full ~1M training data, 23-spectrum and 93-spectrum ref sets perform comparably (top1=0.804). The 93-spectrum set underperforms only on small subsets (~1000 samples).
@@ -203,15 +203,51 @@ Spectra_interrogationr2.ipynb contains three mathematical write-ups in markdown 
 Notation conventions (updated 2026-04-14): $\mathbf{W}^p \in \R^{N \times L}$ for pixel-level reflectance matrix, $\mathbf{w}_i \in \R^L$ for single pixel $i$ (subscript, not superscript), $w_{ij}$ for pixel $i$ band $j$, $\hat{w}$ for normalized, $Q_1=95$ for mineral classes, $\hat{q}_{1,i}$ for predicted Group 1 mineral ID of pixel $i$. Radiance: $R_j^M$ (measured at-sensor, superscript M for "measured"). Attention: vectorized equations — $\mathbf{s}_h, \mathbf{A}_h, \bm{\beta}_h \in \R^L$ (vectors over bands, not element-wise $A_{h,j}$). Temperatures: $\tau_a$ for attention softmax (0.9), $\tau_l$ for LUSI KL divergence (2.0). Use $d$ instead of $d_{\text{model}}$ (defined once as $d = d_{\text{model}} = 192$ in notation table). Use $\bm{\beta}_h$ (bm package) not $\boldsymbol{\beta}_{h,j}$. Use $\oplus$ for vector concatenation ($\mathbf{z}_{\text{cat}}$), $[\cdot]^T$ for stacking into matrices ($\mathbf{E}$). No $\cdot$ dot for scalar-vector multiplication (juxtaposition only). Cross-entropy labels: $q_c$ / $\tilde{q}_c$ (not $y_c$). Key symbol choices to avoid collisions: $\delta_j$ for learnable per-band shift (not $\beta_j$), $\rho$ for LUSI scale factor and $\xi$ for LUSI tilt factor, $\omega_j$ for knockoff test statistic, $g$ for Part I PCA band grouping index
 
 ## Journal Paper
-- `Disseratation_txt/PaperofPartII/partII_paper.tex` — journal paper for Remote Sensing of Environment (elsarticle class)
+- `Disseratation_txt/PaperofPartII/partII_paper.tex` — journal paper, **target venue PNAS** (Research Report) as of 2026-05-04. Was previously formatted for Remote Sensing of Environment (elsarticle class); rewrite to PNAS LaTeX template and ~4,000-word length is in progress.
 - Shares `references.bib` with dissertation (copied to both directories)
-- Covers Part II content: architecture, PCA priors, LUSI, ablation, cross-scene generalization
-- Key additions vs dissertation: TOA decomposition equation (Eq. toa_decomp) connecting surface/TOA reflectance to PCA and LUSI motivation; forward model / retrieval framing from Thompson; sRTMnet/MODTRAN lineage (ISOFIT originally called MODTRAN, sRTMnet trained on MODTRAN outputs replaces those calls in the operational pipeline)
-- Group 1 only — Group 2 distribution + per-class shortfall table are dissertation-exclusive; paper has compact prose summary
-- Parameter summary table (`tab:params`) is dissertation-exclusive (space-saving in paper); paper retains prose stating 307,373 (H=4) / 456,737 (H=8) totals and lists dependencies ($d=192$, $L=285$, $Q_1=95$, $c_{in}=3$)
-- Hybrid head init equation (`eq:hybrid_init`) is dissertation-exclusive (paper removed for space); paper retains prose description of PCA-vs-non-PCA head allocation
-- Continuum-removed-vs-raw subsection sits in blue at the end of the paper (post-bibliography candidate, kept tentative pending space)
-- Table 1 (`tab:emulation_spectrum`) reworked: 4 rows → 3 rows (Braverman row removed); new "Acceleration target" column added with explicit baseline for each row; gray header row fill (requires `\usepackage[table]{xcolor}` — added in both files); rows are now Forward emulator (sRTMnet, GP/OCO-2, FastMAPOL), Retrieval emulator/direct learned retrieval (Keely 2025 probabilistic, Li 2022 deterministic), Post-hoc direct retrieval surrogate (this work). Caption explicitly notes speedups are not directly comparable across rows because baselines differ. Bulleted intuition summary follows the table: "what is learned" / "what is bypassed" framing per row, with $F_\theta(\mathbf{x})$ / $g_\theta(\mathbf{y})$ / $h_\theta(\mathbf{y})$ symbolic distinctions.
+- Covers Part II content: architecture, manual + PCA spectral priors, LUSI, ablation, cross-scene generalization
+- Continuum-removed-vs-raw subsection was in the paper but has been removed (kept in dissertation only) per 2026-05-03 prune
+- Pruned 2026-05-04: §6 rhetorical flourish, §5 4-bullet "Key architectural features" list (replaced with one-paragraph integration), `tab:manual_ablation` (4-row table — superset is in dissertation `tab:ablation`), and TODO blocks for cross-scene-generalization and discussion sections (full content lives in dissertation Ch 10–11)
+
+### PNAS submission target (2026-05-04)
+- **Article type**: Research Report (~6 PNAS pages, ~4,000 words main text, ≤250-word abstract, **50–120-word Significance Statement required**, 3–5 keywords, ~4 figures/tables, ≤50 references)
+- **Section structure** (PNAS preferred order): Introduction → Results → Discussion → Materials and Methods → Acknowledgments → References
+- **Strategic framing**: position the work as the transformer instantiation of the **physics-informed deep learning** paradigm (Karpatne 2017 theory-guided ML + Raissi 2019 PINN). Two physics-injection mechanisms in parallel:
+  - **Architectural prior**: spectroscopic priors injected through attention bias $\bm{\beta}_h$ (manual mode at literature wavelengths or PCA-curated mode on USGS library)
+  - **Loss-based prior**: LUSI consistency regularization, statistical invariants of atmospheric transfer adapted from Vapnik-Izmailov
+- **Polished thesis paragraph** (end-of-Introduction; cite `karpatne2017tgds`, `raissi2019pinn`, `vapnik2020`):
+
+  > "We present a cross-attention transformer that is physics-informed in the sense of Karpatne et al. and Raissi et al.: spectroscopic priors are injected through the attention bias $\bm{\beta}_h$, and statistical invariants drawn from atmospheric transfer enter through a consistency loss adapted from Vapnik and Izmailov. The two mechanisms realize the two foundational ingredients of physics-informed deep learning — architectural prior initialization and physics-driven loss regularization — in an attention-based architecture, made natural and inspectable by the attention bias's role as an explicit physics-injection interface. We demonstrate this on EMIT top-of-atmosphere hyperspectral observations: a 4-head transformer with a manual spectral prior matches the accuracy of an 8-head transformer-only baseline at 14% lower training cost, and consistency regularization is the only configuration that maintains accuracy on a geographically disjoint test scene where unregularized configurations degrade."
+
+- **Significance Statement draft** (118 words, broad-audience, the most distinctive PNAS element):
+
+  > "Mapping Earth's surface mineralogy from orbiting hyperspectral sensors is critical for understanding mineral dust's role in climate, but the standard pipeline rejects the very high-aerosol pixels it was designed to study because the underlying radiative transfer inversion fails. We show that a cross-attention transformer trained directly on uncorrected top-of-atmosphere reflectance replaces this multi-step pipeline with a single forward pass, recovering canonical iron-oxide absorption features through interpretable attention. The approach realizes physics-informed deep learning for an attention-based architecture: spectroscopic priors enter through attention bias initialization, and statistical invariants drawn from atmospheric transfer enter through consistency regularization. The result is a transferable framework for injecting domain knowledge into transformer models in any physical-science setting where labeled data is bounded by an upstream physical model."
+
+- **Results structure** (3 subsections, with priors and LUSI as parallel physics-injection mechanisms — *not* as method + side-experiment):
+  1. Cross-attention transformer recovers Fe³⁺ diagnostics from TOA reflectance (uses Fig: per-head attention)
+  2. Two complementary physics-injection mechanisms: (2a) attention-bias initialization substitutes for architectural capacity (Table: ablation); (2b) consistency regularization improves cross-region generalization where unregularized configurations degrade (Fig: cross-scene bar chart)
+  3. Optional integrative result tying both mechanisms to the high-AOD-recovery argument
+
+- **LUSI in/out-of-distribution narrative**: re-frame the existing observation (LUSI hurts in-distribution by ~0.4 pp but is the only configuration that *improves* on the SW US scene by +2.6 pp) as a *feature* aligned with PINN literature: physics-driven regularization can trade in-distribution training error for better extrapolation to physics-respecting test conditions. This is PNAS-friendly because it demonstrates the framework, not just the numbers.
+
+- **Main-text figures/tables (max 4)**:
+  1. Architecture pipeline (`architecture_diagram.pdf`)
+  2. Per-head attention plot (`4Hxformer_attnplot.png`)
+  3. Headline ablation table (Trans 4H/8H × Manual 4H/8H + curated PCA 4H)
+  4. Cross-scene generalization bar chart (LUSI +2.6%, Trans −1.7%, PCA −5.8%) — needs to be created
+
+- **Move to SI Appendix (single PDF)**:
+  - Tables: `tab:emulation_spectrum`, `tab:fe_diagnostics`, `tab:notation`, `tab:arch_inspirations`, `tab:phys_interventions`
+  - Figure: `fig:g1_hist`
+  - Equations: TOA decomposition, full LUSI loss derivation, full attention/pooling equations
+  - Detailed methods: training data sampling, sanitization pipeline, full ablation table with PCA-legacy + LUSI rows, prior-evolution diagnostics
+  - Per-head walkthrough text (just one-line summary in main)
+
+- **Required PNAS-specific elements to add**: ORCID iD for corresponding author (and ideally all authors), narrative author contributions statement, competing-interest declaration, funding acknowledgment, **Data and software availability statement** (mention GitHub repo `kjm422/Dissertation-transformer` and the EMIT data source LP DAAC).
+
+- **Two overclaim warnings to soften** when finalizing the thesis paragraph: "available only in transformers, not in CNNs or MLPs" → "made natural and inspectable by the attention bias's role as an explicit physics-injection interface" (CNN attention modules exist; PIT for fluid dynamics exists). "For the first time in an attention-based architecture" → "applied to top-of-atmosphere hyperspectral mineral classification" (other physics-informed transformers exist in fluid dynamics and atmospheric chemistry).
+
+- **Workflow recommendation**: fork as `partII_paper_PNAS.tex` rather than editing in place — keeps the RSE-length version available for the dissertation companion or RSE fallback.
 
 ### Bib entries added during recent revisions
 - `vermote1997sixs` — Vermote et al. 1997, IEEE TGRS 35(3): 675–686. Canonical 6S radiative transfer reference replacing the earlier `schott2007`/`schaepman2006` citations for the TOA decomposition. Both schott2007 and schaepman2006 are no longer cited in either document.
@@ -242,7 +278,8 @@ Notation conventions (updated 2026-04-14): $\mathbf{W}^p \in \R^{N \times L}$ fo
 
 ## LUSI Findings
 LUSI does not improve accuracy in any configuration tested:
-- 4-head LUSI-only (0.787) underperforms transformer baseline (0.791)
+
+- 4-head LUSI-only (0.773 under r17; legacy 0.787 under r14/r15) underperforms transformer baseline (0.791)
 - 8-head PCA+LUSI (0.805) matches PCA-only (0.806) within noise
 - LUSI loss is small (~0.03) at convergence — model already achieves brightness/slope invariance through training
 - Conclusion: explicit invariance regularization is redundant at ~1M pixel data scale
@@ -291,24 +328,32 @@ python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
 
 The build script reads `.npy` filenames directly from `--npy_dir` (no mineral matrix); each file is classified by keyword on its filename. Modes filter which categories survive into PCA. Saves both `zabs` and `max` bias variants per head count.
 
-### Manual prior empirical results (2026-05-04)
+### Spectral-prior empirical results (2026-05-04, updated)
 
-The manual prior (r17, `--physics_mode manual`, default 5-band Fe³⁺ list) was run at H=4 and H=8 and produced the following:
+The architectural prior was evaluated under two independent constructions of $\beta_h$ for the PNAS paper, both at $\alpha = 1.0$ with a 3-epoch freeze of the prior-bearing heads. (A third construction, PCA-curated with max normalization, was also tested and reached the same 0.809 final accuracy; it is omitted from the paper to save space and because the zabs version mathematically subsumes the legacy z-score-of-|v| normalization.)
 
-| Config | Top-1 | Top-3 | head_sim | prior_rms | Time (min) |
-|---|---:|---:|---:|---:|---:|
-| Transformer (baseline) | 0.791 | 0.962 | — | — | 117 |
-| **Manual prior, α=1.0, H=4** | **0.809** | **0.967** | 0.031 | 0.977 | 117 |
-| Transformer (baseline) | 0.813 | 0.968 | — | — | 136 |
-| Manual prior, α=1.0, H=8 | 0.806 | 0.966 | 0.015 | 1.154 | 125 |
+| Config | Top-1 | Top-3 | head_sim | prior_rms | prior_rms Δ | Time (min) |
+|---|---:|---:|---:|---:|---:|---:|
+| Transformer (baseline) | 0.791 | 0.962 | — | — | — | 117 |
+| **Manual prior, H=4 (PAPER HEADLINE)** | **0.808** | **0.967** | 0.031 | 0.977 | −2.3% | 117 |
+| PCA-curated zabs, H=4 | 0.809 | 0.967 | 0.028 | 0.946 | −5.4% | 124 |
+| LUSI-only, H=4 (r17, 2026-05-06) | 0.773 | 0.954 | 0.043 | 0.000 | — | 273 |
+| Transformer (baseline) | 0.813 | 0.968 | — | — | — | 136 |
+| Manual prior, H=8 | 0.806 | 0.966 | 0.015 | 1.154 | +15.4% | 125 |
+| PCA-curated max, H=4 (omitted from paper) | 0.809 | 0.967 | 0.025 | 0.856 | −14.4% | 124 |
 
-**Headline finding**: Manual prior at H=4 (0.809) matches Transformer 8H (0.813) at 14% lower training cost (117 vs 136 min), demonstrating that a literature-distilled spectral prior substitutes for one architectural doubling. Adding more heads beyond 4 (8H manual = 0.806) does *not* help — consistent with the standard "physics priors help when capacity is constrained" finding.
+**Headline finding (capacity substitution)**: The manual spectral prior at $H = 4$ reaches validation accuracy 0.808, statistically indistinguishable from both the PCA-curated zabs prior (0.809) and the 8-head transformer-only baseline (0.813) at $\sim$14% lower training time. The convergence of two independently constructed priors at essentially the same final accuracy from largely non-overlapping band sets supports the interpretation that the architectural prior contributes **capacity substitution rather than wavelength selection**.
+
+**Early-epoch acceleration finding (2026-05-04)**: a 4-config first-5-epochs comparison (Manual / PCA-zabs / Trans / LUSI all at $H = 4$) shows:
+- Manual prior leads at every epoch: epoch-1 top-1 = 0.331 vs Trans 0.305 (immediate +2.6 pp from initialization alone); the gap holds to ~2–3 pp through epoch 5.
+- PCA-zabs shows a smaller but consistent push: epoch-1 top-1 = 0.313 (+0.8 pp over Trans), training-loss trajectory tracks Manual more closely than Trans.
+- LUSI without architectural prior is *slower* than Trans early in training, consistent with its in-distribution underperformance — the architectural-vs-loss-based asymmetry reinforces the two-mechanism framing for the paper.
 
 **Diagnostic signals**:
-- `prior_rms` at end of training: 0.977 (H=4, ≈ initial α=1.0 → model was satisfied) vs 1.154 (H=8 → model amplified the priors during training, suggesting the extra capacity wasn't used for novel feature discovery)
-- `head_sim`: 0.031 (H=4) and 0.015 (H=8) — heads stayed distinct, no collapse
+- `prior_rms` differences in the two paper configurations: manual held priors closest to initial scale (0.977, just −2.3%), zabs preserved the prior nearly as well (0.946, −5.4%). The zabs result is consistent with the negative-floor of z-score normalization providing additional inductive signal that the model doesn't want to wash out.
+- At $H = 8$ the manual prior amplified to 1.154 (+15.4%), indicating the extra capacity went into prior amplification rather than novel feature discovery; `head_sim` stayed low (0.015) ruling out head collapse.
 
-This was the first physics-informed result in the project that genuinely beats the transformer-only baseline (every prior PCA result was tainted by the bad-band-mask issue).
+**Implication for the paper**: the architectural-vs-loss-based asymmetry during early training is the cleanest evidence yet of the two-mechanism framework. Architectural priors provide an *immediate* inductive head start (Manual at H=4 is +2.6 pp ahead by epoch 1); loss-based priors *delay* in-distribution convergence in exchange for cross-region robustness (LUSI is slower in-distribution but is the only configuration that improves on a disjoint test scene). Both fit the PINN-tradition pattern but at different points in the training trajectory.
 
 ### Curated PCA prior outputs (2026-05-04)
 

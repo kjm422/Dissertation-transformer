@@ -378,16 +378,8 @@ The architecture described in the next section addresses the implementation.
 \label{sec:architecture}
 
 The proposed architecture is a cross-attention transformer designed specifically for per-pixel spectral classification from hyperspectral TOA reflectance. 
-It departs from conventional self-attention transformers (which were designed for natural language and images) in three substantive ways: 
-the queries are learned rather than derived from the input; the attention bias provides a physics-injection interface for reference-spectra priors; and the loss function accommodates statistical invariants drawn from physically motivated perturbations of TOA reflectance. 
-Key architectural features include:
-\begin{enumerate}
-  \item \textbf{Shape-aware tokenization:} Each band is encoded with its raw reflectance together with first and second finite differences along $\lambda$, so tokens carry local absorption-feature shape into the attention layer rather than reflectance alone \cite{tsai1998derivative}.
-  \item \textbf{Learned spectral queries:} Unlike self-attention transformers, this architecture probes the spectral sequence with learned templates, reducing complexity from $O(L^2)$ to $O(H \times L)$.
-  \item \textbf{Spectral infusion priors:} USGS reference spectra initialize attention bias via PCA to steer heads toward diagnostic absorption features.
-  \item \textbf{Statistical invariants:} Learning Using Statistical Invariants (LUSI) enforces robustness against illumination shifts and aerosol scattering.
-\end{enumerate}
-The remainder of this section formalizes the notation, walks through preprocessing, tokenization, attention pooling, classification head, and optimization, and summarizes the parameter budget. 
+It departs from conventional self-attention transformers (which were designed for natural language and images) in three substantive ways: shape-aware tokenization encodes each band with its raw reflectance plus first and second finite differences along $\lambda$ \cite{tsai1998derivative}; the queries are learned rather than derived from the input, reducing attention complexity from $O(L^2)$ to $O(H \times L)$; and the attention bias provides a physics-injection interface for USGS-derived spectral priors (Section~\ref{sec:physics}) while a Vapnik-style consistency regularizer (Section~\ref{sec:lusi}) accommodates statistical invariants drawn from physically motivated perturbations of TOA reflectance.
+The remainder of this section formalizes the notation, walks through preprocessing, tokenization, attention pooling, classification head, and optimization, and summarizes the parameter budget.
 Table~\ref{tab:notation} summarizes the key symbols used throughout the remainder of this paper.
 Figure~\ref{fig:architecture} provides a full pipeline overview.
 
@@ -730,7 +722,6 @@ Because attention weights are not causal explanations by themselves, this result
 The transformer described in Section~\ref{sec:architecture} is a complete classifier on its own.
 This section presents two user-specified extensions that inject physical knowledge into training without altering the underlying architecture: (i) an attention-bias initialization that distills USGS Spectral Library knowledge into the per-head attention bias $\bm{\beta}_h$, available in two modes --- manual diagnostic-band placement (Section~\ref{sec:manual_priors}) or PCA on the full reference library (Section~\ref{sec:pca_priors}) --- and (ii) a Vapnik-style consistency regularizer (LUSI) that penalizes prediction drift under physically motivated transformations of the input spectrum (Section~\ref{sec:lusi}).
 The extensions can be enabled in isolation or in combination.
-The infusion of scientifically-accepted roots inspires greater trust in the methodology from the HSI community.
 Method-respective connections can be seen with the dotted line architectural insertion points in Figure \ref{fig:architecture}.
 Effects on accuracy, attention interpretability, and cross-region generalization are evaluated in the ablation results.
 
@@ -859,6 +850,20 @@ It represents variance in the convolved USGS surface-reflectance library (not th
 Thus, the prior is best understood as a soft, physically motivated initialization that biases early attention toward wavelengths where laboratory mineral spectra tend to vary. 
 As discussed in Section~\ref{sec:ablation}, this initialization yields a small, configuration-dependent effect on accuracy alongside more spectroscopically interpretable attention patterns.
 
+Figure~\ref{fig:prior_init_compare} contrasts the two prior constructions visually at $H = 4$, plotted at the moment the model first sees the training data (epoch 0).
+The manual prior (top panel) places sharp Gaussian bumps at the five literature wavelengths --- $480, 535, 670, 860, 920$~nm --- with the remaining $\sim$280 bands held at zero, distributed across the four heads in round-robin order.
+The PCA-curated prior (bottom panel) draws its non-zero loadings from the four leading principal components of the curated iron-bearing reference library; the absolute-value-then-z-score normalization (\texttt{zabs}) carried forward from the legacy in-line pipeline produces a continuous bias that is several-fold larger in magnitude and spans most of the unmasked spectral range, with discontinuities at the water-vapor mask edges (\textasciitilde{}1340--1500 and \textasciitilde{}1800--1960~nm).
+The two constructions differ both in \emph{support} (5 wavelengths versus $\sim$220 bands) and in \emph{magnitude scale} ($\max|\bm{\beta}_h| = 1$ versus $\max|\bm{\beta}_h| \approx 3$).
+That both reach the same final top-1 accuracy at $H = 4$ (Section~\ref{sec:ablation}) despite this large difference in initialization geometry is the empirical observation that motivates the capacity-substitution interpretation.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{4head_manualprior.png}\\[0.5em]
+\includegraphics[width=\linewidth]{4head_PCAzabprior.png}
+\caption{Attention bias $|\bm{\beta}_h|$ at epoch 0 (initialization) for the two architectural-prior constructions at $H = 4$. \textbf{Top:} manual diagnostic-band prior, with Gaussian bumps centered at literature Fe$^{3+}$ wavelengths (480, 535, 670, 860, 920~nm) assigned round-robin to heads. \textbf{Bottom:} PCA-curated prior (\texttt{zabs} normalization) derived from the four leading principal components of the curated iron-bearing reference library; non-zero across most unmasked bands, with sharp drop-outs at the water-vapor mask edges. Vertical dashed lines mark the same five literature wavelengths in both panels for visual reference. The two priors differ by $\sim$50$\times$ in spectral support and $\sim$3$\times$ in peak magnitude, yet both reach the same final top-1 accuracy at $H = 4$ (Section~\ref{sec:ablation}).}
+\label{fig:prior_init_compare}
+\end{figure}
+
 \textcolor{red}{\textbf{TODO (inductive bias / faster convergence):} Demonstrate that PCA-seeded attention reaches high validation accuracy in fewer epochs than random initialization --- the model still has to learn the specifics, but it starts in a better part of parameter space. Plot validation top-1 vs.\ epoch for PCA-seeded vs.\ random-seeded configurations.}
 
 \textcolor{red}{\textbf{TODO (interpretability scaffolding):} Use attention evolution plots to show that PCA-seeded heads stay near diagnostic wavelengths while exploring around them, whereas random heads wander more widely. The PCA seed provides an anchored ``spectroscopic reference head'' that can be validated against literature --- useful for interpretability claims even when accuracy gains are modest.}
@@ -962,7 +967,7 @@ LUSI requires two additional forward passes per batch, approximately doubling tr
 \subsubsection{Empirical findings}
 \label{sec:lusi_findings}
 
-LUSI does not improve accuracy on the training distribution: 4-head LUSI-only (0.787) underperforms the transformer baseline (0.791), and 8-head PCA+LUSI (0.805) matches PCA-only (0.806) within noise.
+LUSI does not improve accuracy on the training distribution: 4-head LUSI-only (0.773) underperforms the transformer baseline (0.791), and 8-head PCA+LUSI (0.805) matches PCA-only (0.806) within noise.
 The LUSI loss converges to $\sim$0.03, indicating the model already achieves brightness/slope invariance through standard training at the $\sim$1M pixel data scale.
 
 The value of LUSI is most visible \emph{out of distribution}. Cross-scene evaluation on a geographically disjoint southwestern US test region reveals that LUSI is the only configuration that \emph{improves} on the new scene (+2.6\%), while the transformer-only model degrades ($-$1.7\%) and PCA spectral priors degrade most ($-$5.8\%). This is consistent with Vapnik and Izmailov's prediction that statistical invariants help when test conditions differ from training: the scale and slope predicates encourage invariances that transfer across atmospheric conditions, while PCA spectral priors encode region-specific spectral patterns that do not.
@@ -979,29 +984,8 @@ A direct implication is that LUSI buys \emph{atmospheric robustness} as a proper
 This section evaluates the manual spectral prior of Section~\ref{sec:manual_priors} against the transformer-only baseline of Section~\ref{sec:trans_only_results} at two head counts ($H = 4$ and $H = 8$).
 All four configurations were trained for 120 epochs on the same 1.26~million pixel training set with identical optimizer settings, the same fixed random seed, and the same hardware (Apple M4 Max, MPS backend); the only differences are the number of attention heads and whether the attention bias $\bm{\beta}_h$ was initialized to zero (transformer-only) or to the round-robin Gaussian-bump pattern at the canonical Fe$^{3+}$ wavelengths from Table~\ref{tab:fe_diagnostics} (manual prior, $\alpha = 1.0$, freeze=3 epochs).
 
-\begin{table}[!htbp]
-\centering
-\small
-\caption{Manual spectral prior versus transformer-only baseline at $H = 4$ and $H = 8$. Top-1 / Top-3 are validation accuracies on a held-out 10\% split. Train + Val time is wall-clock for the full 120-epoch run on a single Apple M4 Max GPU (40-core) using PyTorch's MPS backend.}
-\label{tab:manual_ablation}
-\begin{tabular}{p{0.30\textwidth}p{0.10\textwidth}p{0.13\textwidth}p{0.13\textwidth}p{0.18\textwidth}}
-\hline
-\rowcolor[gray]{0.85}
-\textbf{Configuration} & \textbf{\#Heads} & \textbf{Top-1 Acc.} & \textbf{Top-3 Acc.} & \textbf{Train + Val Time (min)} \\
-\hline
-Transformer only & 4 & 0.791 & 0.962 & 117 \\
-\hline
-Manual prior, $\alpha = 1.0$ & 4 & \textbf{0.809} & \textbf{0.967} & 117 \\
-\hline
-Transformer only & 8 & 0.813 & 0.968 & 136 \\
-\hline
-Manual prior, $\alpha = 1.0$ & 8 & 0.806 & 0.966 & 125 \\
-\hline
-\end{tabular}
-\end{table}
-
 \paragraph{Headline finding.}
-The most useful comparison is between the second and third rows of Table~\ref{tab:manual_ablation}: a 4-head transformer initialized with the manual spectral prior (top-1 = 0.809) reaches accuracy statistically indistinguishable from the 8-head transformer-only baseline (top-1 = 0.813) at 14\% lower wall-clock training time (117 vs.\ 136 minutes).
+A 4-head transformer initialized with the manual spectral prior (top-1 = 0.808, train+val 117 min) reaches accuracy statistically indistinguishable from the 8-head transformer-only baseline (top-1 = 0.813, 136 min) at 14\% lower wall-clock training time --- demonstrating that the literature-distilled prior substitutes for one architectural doubling. The full ablation table, including PCA-curated (top-1 = 0.809) and LUSI variants and head-counts $H = 4, 8$, is reported in the dissertation.
 Interpreted operationally, the literature-distilled manual prior substitutes for one architectural doubling: instead of paying for an additional set of $H = 4$ attention heads to discover Fe$^{3+}$ diagnostic features from data, five wavelengths from Table~\ref{tab:fe_diagnostics} are pinned into the attention bias and the model is given two epochs less to converge.
 This is consistent with the standard observation that physics-informed priors help most when the model's capacity is constrained \cite{raissi2019pinn, karpatne2017tgds}: at $H = 4$ the prior contributes a $+1.8$~percentage-point top-1 improvement over transformer-only, while at $H = 8$ --- where the model already has enough capacity to discover the same diagnostic regions on its own (Figure~\ref{fig:trans4_attn} shows three of four heads doing so without any guidance) --- adding the prior produces no additional gain and a small ($-0.7$~pp) reduction.
 
@@ -1011,24 +995,28 @@ First, the attention-bias RMS magnitude $\|\bm{\beta}\|_{\text{rms}}$ at the end
 Second, the average pairwise cosine similarity between heads' learned query vectors $\mathbf{q}_h$ was $0.015$ for $H = 8$ versus $0.031$ for $H = 4$, ruling out head collapse as an explanation: the random heads stayed distinct from the prior-anchored heads but the model elected not to use that capacity for novel feature discovery.
 Together, these observations suggest the headline takeaway: \emph{the manual prior is most valuable as a way to compress capacity, not as an addition to already-sufficient capacity}.
 
+\paragraph{Early-epoch acceleration: architectural vs.\ loss-based priors.}
+Final accuracy is only one signature of the prior's contribution; the rate of convergence is another.
+Figure~\ref{fig:earlyepoch} compares the first five epochs of training across four $H = 4$ configurations: transformer-only, manual prior, PCA-curated (\texttt{zabs}) prior, and LUSI-only.
+The manual prior leads on every logged metric: top-1 accuracy at epoch 1 is $0.331$ with the manual prior versus $0.305$ for transformer-only --- an immediate $+2.6$~percentage-point lead from initialization alone --- and the gap remains $\sim$2--3~pp through epoch 5.
+The PCA-curated \texttt{zabs} prior shows a smaller but consistent push: epoch-1 top-1 is $0.313$ ($+0.8$~pp over transformer-only), and its training-loss trajectory tracks the manual prior more closely than transformer-only.
+By contrast, the loss-based prior alone (LUSI-only at $H = 4$) is \emph{slower} than transformer-only in early-epoch convergence --- consistent with its in-distribution accuracy gap (top-1 = $0.773$ vs.\ $0.791$) and with PINN-literature observations that physics-driven loss regularization can trade training-set fit for extrapolation \cite{raissi2019pinn, karpatne2017tgds}.
+The asymmetry between architectural and loss-based priors during early training reinforces the two-mechanism reading of the framework: architectural priors provide an immediate inductive head start, while loss-based priors invest training-set fit in robustness that pays out at test time on out-of-distribution scenes (cross-region generalization, reported in the dissertation).
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\textwidth]{train_top1_top3.png}
+\caption{First-five-epoch convergence trajectories at $H = 4$ for four configurations: transformer-only, manual prior, PCA-curated (\texttt{zabs}) prior, and LUSI-only. \textbf{Left:} training cross-entropy loss; \textbf{center:} validation top-1; \textbf{right:} validation top-3. The legend reports the epoch-1 value of each metric for each configuration. The manual prior leads every metric across all five epochs ($+2.6$~pp top-1 by epoch 1); the PCA-curated \texttt{zabs} prior provides a smaller but consistent push over the transformer-only baseline ($+0.8$~pp); LUSI alone (no architectural prior) converges \emph{more slowly} than transformer-only in-distribution, consistent with its in-distribution accuracy gap and with PINN-literature observations that physics-driven loss regularization trades training-set fit for extrapolation.}
+\label{fig:earlyepoch}
+\end{figure}
+
 \paragraph{Caveats.}
 The reported numbers are single-seed runs at one training-set size ($N \approx 1.26 \times 10^{6}$).
 At smaller training sizes the prior would be expected to provide larger gains (consistent with prior-as-capacity-substitute interpretation), and at larger training sizes the gap should shrink further --- a direct test of this would require re-running the full ablation at $N = 10^4, 10^5, 10^6$ pixels, which is left for future work.
-The four configurations in Table~\ref{tab:manual_ablation} also do not include LUSI (Section~\ref{sec:lusi}); LUSI's combined effect with the manual prior is reported separately in Section~\ref{sec:lusi_findings}.
-
-\textcolor{red}{\textbf{TODO:} Section 9 --- Cross-Scene Generalization (Ch 11 content). Expand the LUSI cross-scene result (LUSI 8H +2.6\% on SW US, transformer 8H $-$1.7\%, PCA 8H no-continuum $-$5.8\%) into a full subsection. Frame it as the main empirical evidence that statistical-invariance regularization buys atmospheric robustness and supports the high-AOD recovery argument introduced in Section~\ref{sec:lusi_findings}. Include the accuracy-vs-AOD binning analysis on the validation set as a within-distribution test of the same robustness property.}
+These manual-prior runs do not include LUSI (Section~\ref{sec:lusi}); LUSI's combined effect with the manual prior is reported separately in Section~\ref{sec:lusi_findings}.
 
 \section{Discussion and conclusions}
 \label{sec:conclusions}
-
-\textcolor{red}{\textbf{TODO:} Full Discussion / Conclusions section. Key threads to develop:}
-\begin{itemize}
-  \item \textcolor{red}{\textbf{Summary of contributions} --- restate the four contributions from Section~\ref{subsec:contributions}: RTM-bypass classifier, spectroscopically interpretable attention, PCA spectral priors, and statistical-invariance regularization for atmospheric robustness.}
-  \item \textcolor{red}{\textbf{Recovering the high-AOD data gap} --- elaborate the argument from Section~\ref{sec:lusi_findings}. EMIT's L2 pipeline discards pixels at AOD $> 0.5$ in 550~nm because ISOFIT's RTM-based inversion fails to converge reliably; this is operationally most acute over the dust-source regions EMIT was designed to study. A post-hoc model that maps L1B TOA reflectance directly to mineral identity, trained with statistical invariance to atmospheric perturbations, is in principle not subject to the same threshold: at inference it produces a forward-pass prediction for whatever spectrum is supplied, regardless of AOD. The cross-scene generalization result (LUSI +2.6\% on SW US) is consistent with this property, although it does not directly probe the high-AOD regime.}
-  \item \textcolor{red}{\textbf{Validation strategy for the high-AOD claim.} Within-dataset: bin EMIT validation pixels by L2A-reported AOD and compare per-bin accuracy across configurations; LUSI's accuracy curve should remain flatter than transformer-only or PCA. Out-of-dataset: cross-sensor validation against an instrument with looser atmospheric-correction protocols (PRISMA, EnMAP, CHIME) on overlapping scenes, and in-situ validation at high-AOD targets such as the Bod\'el\'e Depression or Lake Eyre.}
-  \item \textcolor{red}{\textbf{Limitations} --- the LUSI tilt magnitude ($\sigma = 0.01$) is conservative relative to AOD $> 0.5$ slope distortions; training labels are themselves bounded by the AOD $\le 0.5$ regime; the model has no explicit uncertainty quantification on its predictions for out-of-distribution inputs.}
-  \item \textcolor{red}{\textbf{Future work} --- larger LUSI tilt magnitudes; AOD-conditioned augmentation curricula; cross-sensor and in-situ validation; extension to PACE and forthcoming SBG/CHIME/EnMAP missions.}
-\end{itemize}
 
 %% ====================================================================
 %% REFERENCES

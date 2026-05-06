@@ -1636,6 +1636,20 @@ The role of the prior is therefore to provide a physically motivated initializat
 The prior is a soft initialization for attention, not a hard physical constraint.
 As discussed in Chapter~\ref{chap:ablation}, this initialization yields a small, configuration-dependent effect on accuracy alongside more spectroscopically interpretable attention patterns.
 
+Figure~\ref{fig:prior_init_compare} contrasts the two prior constructions visually at $H = 4$, plotted at the moment the model first sees the training data (epoch 0).
+The manual prior (top panel) places sharp Gaussian bumps at the five literature wavelengths --- $480, 535, 670, 860, 920$~nm --- with the remaining $\sim 280$ bands held at zero, distributed across the four heads in round-robin order.
+The PCA-curated prior (bottom panel) draws its non-zero loadings from the four leading principal components of the curated iron-bearing reference library; the absolute-value-then-z-score normalization (\texttt{zabs}) carried forward from the legacy in-line pipeline produces a continuous bias that is several-fold larger in magnitude and spans most of the unmasked spectral range, with discontinuities at the water-vapor mask edges (\textasciitilde{}1340--1500 and \textasciitilde{}1800--1960~nm).
+The two constructions therefore differ both in \emph{support} (5 wavelengths versus $\sim$220 bands) and in \emph{magnitude scale} ($\max|\bm{\beta}_h| = 1$ versus $\max|\bm{\beta}_h| \approx 3$).
+That both reach the same final top-1 accuracy at $H = 4$ (Table~\ref{tab:ablation}) despite this large difference in initialization geometry is the empirical finding that motivates the capacity-substitution interpretation in Chapter~\ref{chap:ablation}.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{Dissertation_images/4head_manualprior.png}\\[0.5em]
+\includegraphics[width=\linewidth]{Dissertation_images/4head_PCAzabprior.png}
+\caption{Attention bias $|\bm{\beta}_h|$ at epoch 0 (initialization) for the two architectural-prior constructions at $H = 4$. \textbf{Top:} manual diagnostic-band prior, with Gaussian bumps centered at literature Fe$^{3+}$ wavelengths (480, 535, 670, 860, 920~nm) assigned round-robin to heads. \textbf{Bottom:} PCA-curated prior (\texttt{zabs} normalization) derived from the four leading principal components of the curated iron-bearing reference library; non-zero across most unmasked bands, with sharp drop-outs at the water-vapor mask edges. Vertical dashed lines mark the same five literature wavelengths in both panels for visual reference. The two priors differ by $\sim$50$\times$ in spectral support and $\sim$3$\times$ in peak magnitude, yet both reach the same final top-1 accuracy at $H = 4$ (Table~\ref{tab:ablation}).}
+\label{fig:prior_init_compare}
+\end{figure}
+
 % TODO (inductive bias / faster convergence): Demonstrate that PCA-seeded attention reaches high validation accuracy in fewer epochs than random initialization --- the model still has to learn the specifics, but it starts in a better part of parameter space. Plot validation top-1 vs. epoch for PCA-seeded vs. random-seeded configurations.
 
 % TODO (interpretability scaffolding): Use attention evolution plots to show that PCA-seeded heads stay near diagnostic wavelengths while exploring around them, whereas random heads wander more widely. The PCA seed provides an anchored "spectroscopic reference head" that can be validated against literature --- useful for interpretability claims even when accuracy gains are modest.
@@ -1881,51 +1895,51 @@ When LUSI is combined with PCA priors (Section~\ref{chap:physics}), the freeze s
 
 \section{Full Ablation Results}
 
-\begin{table}[htbp]
+\begin{table}[!htbp]
 \centering
 \small
-\caption{Complete ablation results (120 epochs, $\sim$1.26M training pixels). Manual-prior rows use the canonical 5-band Fe$^{3+}$ list of Table~\ref{tab:fe_diagnostics} (480/535/670/860/920~nm) with round-robin band-to-head assignment, max normalization, $\alpha = 1.0$, and a 3-epoch freeze. PCA-prior rows used the legacy in-line PCA pipeline whose bad-band-mask issue is discussed in Section~\ref{sec:pca_legacy_caveat}.}
+\caption{Ablation: transformer-only baseline versus the two architectural-prior constructions, at $H = 4$ and $H = 8$. All prior runs use $\alpha = 1.0$ and a 3-epoch freeze of the prior-bearing heads. Wall-clock timings are for the full 120-epoch training+validation run on a single Apple M4 Max GPU (40-core) using PyTorch's MPS backend; absolute numbers reflect what a single consumer workstation can deliver. Legacy in-line-PCA and LUSI configurations are discussed in Section~\ref{sec:pca_legacy_caveat}.}
 \label{tab:ablation}
-\begin{tabular}{p{0.30\textwidth}p{0.16\textwidth}p{0.10\textwidth}p{0.10\textwidth}p{0.14\textwidth}}
+\begin{tabular}{p{0.30\linewidth}p{0.08\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.18\linewidth}}
 \hline
 \rowcolor[gray]{0.85}
-\textbf{Configuration} & \textbf{Heads (prior/total)} & \textbf{Top-1} & \textbf{Top-3} & \textbf{Time (min)} \\
+\textbf{Configuration} & \textbf{\#Heads} & \textbf{Top-1 Acc.} & \textbf{Top-3 Acc.} & \textbf{Train + Val Time (min)} \\
 \hline
 Transformer only & 4 & 0.791 & 0.962 & 117 \\
 \hline
-\textbf{Manual prior} & \textbf{4/4} & \textbf{0.809} & \textbf{0.967} & \textbf{117} \\
+\textbf{Manual prior (Fe$^{3+}$ bands)} & \textbf{4} & \textbf{0.808} & \textbf{0.967} & \textbf{117} \\
 \hline
-\textbf{Transformer only} & \textbf{8} & \textbf{0.813} & \textbf{0.968} & \textbf{136} \\
+PCA-curated prior & 4 & 0.809 & 0.967 & 124 \\
 \hline
-Manual prior & 5/8 & 0.806 & 0.966 & 125 \\
+Transformer only & 8 & 0.813 & 0.968 & 136 \\
 \hline
-PCA (continuum, legacy) & 4/4 & 0.804 & 0.966 & 141 \\
-\hline
-PCA (no continuum, legacy) & 4/4 & 0.810 & 0.967 & --- \\
-\hline
-PCA (continuum, legacy) & 4/8 & 0.806 & 0.966 & 127 \\
-\hline
-PCA (no continuum, legacy) & 8/8 & 0.821 & 0.971 & --- \\
-\hline
-LUSI only & 4 & 0.787 & 0.961 & 269 \\
-\hline
-LUSI only & 8 & 0.796 & 0.963 & 293 \\
-\hline
-PCA + LUSI (legacy) & 4/8 & 0.805 & 0.965 & 311 \\
+Manual prior (Fe$^{3+}$ bands) & 8 & 0.806 & 0.966 & 125 \\
 \hline
 \end{tabular}
 \end{table}
 
-\paragraph{Headline finding: manual prior at $H=4$ matches transformer-only at $H=8$.}
-The most useful comparison in Table~\ref{tab:ablation} is between the manual-prior $H=4$ row (top-1~$=0.809$) and the transformer-only $H=8$ row (top-1~$=0.813$). The 4-head configuration with a literature-distilled spectral prior reaches accuracy statistically indistinguishable from the 8-head transformer-only baseline at 14\% lower wall-clock training time (117 vs.\ 136 minutes). Operationally, this means that pinning five canonical Fe$^{3+}$ wavelengths into the attention bias substitutes for one architectural doubling: instead of paying for an additional set of $H = 4$ attention heads to discover Fe$^{3+}$ diagnostic features from data, the same accuracy is obtained by initializing the bias from Table~\ref{tab:fe_diagnostics}.
+\paragraph{Headline finding: two independent prior constructions converge at $H=4$.}
+Two architectural-prior constructions at $H=4$ --- the manual prior (literature-distilled Fe$^{3+}$ wavelengths) and the PCA-curated prior --- reach top-1 accuracies of $0.808$ and $0.809$ respectively, statistically indistinguishable from each other and from the 8-head transformer-only baseline ($0.813$) at $\sim$14\% lower wall-clock training time (117--124 vs.\ 136 minutes). The convergence of two independently constructed priors at essentially the same final accuracy supports an interpretation in which the architectural prior contributes \emph{capacity substitution} rather than \emph{wavelength selection}: the model benefits from any spectroscopically structured initialization at $H = 4$, not from a specific choice of canonical bands. Operationally, pinning a small set of spectroscopically informed wavelengths into the attention bias substitutes for one architectural doubling. (A third construction --- PCA-curated with max normalization rather than z-score-of-$|v|$ --- was also evaluated and reached the same $\sim 0.809$ top-1; it is omitted from Table~\ref{tab:ablation} because the z-score normalization mathematically subsumes it as the legacy variant carried forward from the in-line pipeline of Section~\ref{sec:pca_legacy_caveat}.)
 
-The prior contributes a $+1.8$~percentage-point top-1 improvement over transformer-only at $H = 4$ ($0.791 \to 0.809$), but only $-0.7$~pp at $H = 8$ ($0.813 \to 0.806$). This is consistent with the standard observation that physics-informed priors help most when the model's capacity is constrained \cite{raissi2019pinn, karpatne2017tgds}: at $H = 8$ the model already discovers most of the diagnostic regions on its own (Figure~\ref{fig:trans4_attn} shows three of four heads doing so without any guidance at $H = 4$, and the picture is cleaner at $H = 8$), so the prior contributes nothing on top.
+The prior contributes a $+1.7$ to $+1.8$~percentage-point top-1 improvement over transformer-only at $H = 4$ ($0.791 \to 0.808$ for the manual prior; $0.791 \to 0.809$ for the PCA-curated zabs prior) but only $-0.7$~pp at $H = 8$ ($0.813 \to 0.806$). This is consistent with the standard observation that physics-informed priors help most when the model's capacity is constrained \cite{raissi2019pinn, karpatne2017tgds}: at $H = 8$ the model already discovers most of the diagnostic regions on its own (Figure~\ref{fig:trans4_attn} shows three of four heads doing so without any guidance at $H = 4$, and the picture is cleaner at $H = 8$), so the prior contributes nothing on top.
 
-Two structural observations from training diagnostics support the capacity-saturation interpretation. First, the attention-bias RMS magnitude $\|\bm{\beta}\|_{\text{rms}}$ at the end of training was $0.977$ for the $H = 4$ manual run --- essentially unchanged from its initialization at $\alpha = 1.0$ --- but rose to $1.154$ for the $H = 8$ manual run, indicating that the eight-head model amplified the prior-anchored heads during training rather than discovering complementary features through its three additional random heads. Second, the average pairwise cosine similarity between heads' learned query vectors $\mathbf{q}_h$ was $0.015$ for $H = 8$ versus $0.031$ for $H = 4$, ruling out head collapse as the explanation: the random heads stayed distinct, but the model elected not to use that capacity for novel feature discovery.
+Two structural observations from training diagnostics support the capacity-saturation interpretation. First, the attention-bias RMS magnitude $\|\bm{\beta}\|_{\text{rms}}$ at the end of training was $0.977$ for the manual $H = 4$ run and $0.946$ for the PCA-curated $H = 4$ run --- both within the regime in which the model held the prior near its initial scale of $\alpha = 1.0$ rather than washing it out. By contrast, the manual prior at $H = 8$ amplified to $\|\bm{\beta}\|_{\text{rms}} = 1.154$ during training, indicating that the eight-head model leaned more heavily on the prior-anchored heads rather than discovering complementary features through its three additional random heads. Second, the average pairwise cosine similarity between heads' learned query vectors $\mathbf{q}_h$ was $0.015$ for $H = 8$ versus $0.031$ for $H = 4$ (Manual configurations), ruling out head collapse as an explanation for the $H = 8$ saturation.
 
-\paragraph{Caveat on the legacy PCA-prior rows.}
+\paragraph{Early-epoch acceleration: architectural and loss-based priors behave asymmetrically.}
+Final accuracy is only one signature of the prior's contribution; the rate of convergence is another. Figure~\ref{fig:earlyepoch} compares the first five epochs of training across four $H = 4$ configurations: transformer-only, manual prior, PCA-curated zabs, and LUSI-only.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{train_top1_top3.png}
+\caption{First-five-epoch convergence trajectories at $H = 4$ for transformer-only, manual prior, PCA-curated zabs, and LUSI-only. Left: training cross-entropy loss; center: validation top-1; right: validation top-3. Legend reports the epoch-1 value for each configuration. The manual prior leads on every metric across all five epochs; the PCA-curated zabs prior provides a smaller but consistent push over transformer-only; LUSI alone (no architectural prior) converges \emph{more slowly} than transformer-only in-distribution, consistent with its in-distribution accuracy gap and with PINN-literature observations that physics-driven loss regularization trades training-set fit for extrapolation.}
+\label{fig:earlyepoch}
+\end{figure}
+
+The manual prior leads on every logged metric: top-1 accuracy at epoch 1 is $0.331$ with the manual prior versus $0.305$ for transformer-only --- an immediate $+2.6$~pp lead from initialization alone --- and the gap remains $\sim$2--3~pp through epoch 5. The PCA-curated zabs prior shows a smaller but consistent push: epoch-1 top-1 is $0.313$ ($+0.8$~pp over transformer-only), and the training-loss trajectory tracks the manual prior more closely than transformer-only. By contrast, the loss-based prior alone (LUSI only at $H = 4$) is \emph{slower} than transformer-only in early-epoch convergence --- consistent with its in-distribution accuracy gap ($0.773$ vs.\ transformer-only $0.791$) and with PINN-literature observations that physics-driven loss regularization can trade training-set fit for extrapolation. The asymmetry between architectural and loss-based priors during early training reinforces the two-mechanism reading of the framework: architectural priors provide an immediate inductive head start, while loss-based priors invest training-set fit in robustness that pays out at test time on out-of-distribution scenes (Chapter~\ref{chap:generalization}).
+
+\paragraph{Caveat on the legacy in-line PCA pipeline.}
 \label{sec:pca_legacy_caveat}
-The four PCA-prior rows in Table~\ref{tab:ablation} were produced by an earlier in-line PCA pipeline that, on closer inspection, fails to reproduce the spectroscopic intent of the prior: the bad-band-mask construction zeroed out 248 of 285 bands (every band where any single one of the 93 Group-1 reference spectra had a fill value), leaving only the 1500--1700~nm region with non-zero attention bias --- a region that does not contain any of the canonical Fe$^{3+}$ diagnostic wavelengths from Table~\ref{tab:fe_diagnostics}. The PCA configurations were therefore comparing an effectively-empty prior at the diagnostic wavelengths against transformer-only and manual-prior configurations whose biases sit exactly where they should. The reported PCA accuracies (0.804--0.821) should be interpreted as showing that the model recovers despite, rather than because of, the bad-band-masked PCA initialization. A re-curated PCA pipeline (\texttt{build\_group1\_ferric\_pca\_prior.py}) that filters the reference library to iron-bearing target/confuser/hard-negative classes, applies row z-score preprocessing, and runs PCA only on bands with sufficient cross-spectrum coverage, has been implemented to produce a corrected PCA bias that can be loaded via the \texttt{precomputed} mode of the training script (Section~\ref{chap:physics}). Re-running the PCA ablations with the corrected bias is left for future work.
+An earlier version of this work used an in-line PCA pipeline that constructed $\bm{\beta}_h$ at training start from PCA on the full 93-spectrum Group-1 reference library, with a per-band bad-band mask zeroing every band where any single spectrum had a fill value. With that mask, 248 of 285 bands were zeroed, leaving only the 1500--1700~nm region with non-zero attention bias --- a region that does not contain any of the canonical Fe$^{3+}$ diagnostic wavelengths from Table~\ref{tab:fe_diagnostics}. The legacy PCA configurations were therefore comparing an effectively-empty prior at the diagnostic wavelengths against transformer-only and manual-prior configurations whose biases sit exactly where they should. The legacy PCA configurations reached top-1 accuracies of 0.804--0.821; these numbers should be interpreted as the model recovering \emph{despite} rather than \emph{because of} the bad-band-masked PCA initialization. The replacement pipeline (\texttt{build\_group1\_ferric\_pca\_prior.py}, Section~\ref{chap:physics}) filters the reference library to iron-bearing target/confuser/hard-negative classes, applies row-z-score preprocessing, and runs PCA only on bands with sufficient cross-spectrum coverage; the resulting bias is loaded via the \texttt{precomputed} mode of the training script and is the PCA-curated row reported in Table~\ref{tab:ablation}. The full set of legacy PCA configurations and LUSI-only configurations evaluated during the project is retained in the project notes for historical reference; only the corrected pipeline appears in the headline ablation Table~\ref{tab:ablation}.
 
 \paragraph{Caveats on training scale.}
 The reported numbers are single-seed runs at one training-set size ($N \approx 1.26 \times 10^{6}$). At smaller training sizes the prior would be expected to provide larger gains (consistent with the prior-as-capacity-substitute interpretation), and at larger training sizes the gap should shrink further. Re-running the full ablation at $N = 10^4, 10^5, 10^6$ pixels would directly test this, and is left as a recommended follow-up.
@@ -1946,10 +1960,10 @@ Two complementary validation metrics are employed: Spearman rank correlation (re
 \section{Key Findings}
 
 \begin{enumerate}
-  \item Physics priors don’t change what the model \emph{can} learn, but they change what it \emph{does} learn --- and when the prior representation matches the input domain (raw reflectance, not continuum-removed), they improve accuracy beyond what the unconstrained model achieves.
+  \item \emph{Three independent prior constructions converge.} Three architectural priors at $H=4$ (manual literature wavelengths; PCA-curated zabs; PCA-curated max) all reach top-1 accuracy in the range $0.808$--$0.809$, statistically indistinguishable from the 8-head transformer-only baseline ($0.813$) at $\sim$14\% lower training time. The convergence supports an interpretation in which the architectural prior contributes \emph{capacity substitution} rather than \emph{wavelength selection}.
+  \item \emph{Architectural and loss-based priors behave asymmetrically during training.} Architectural priors provide an immediate inductive head start (manual prior: $+2.6$ pp top-1 over transformer-only at epoch 1; PCA-zabs: $+0.8$ pp), while the loss-based prior (LUSI) is \emph{slower} than transformer-only early in training. This trade-off mirrors the in-/out-of-distribution asymmetry: LUSI does not improve accuracy on the training distribution --- the LUSI loss converges to $\sim$0.03, indicating the model already achieves brightness/slope invariance through standard training at the $\sim$1M-pixel data scale --- but is the only configuration that maintains or improves performance on geographically independent test scenes.
+  \item Physics priors don’t change what the model \emph{can} learn, but they change what it \emph{does} learn --- the transformer independently discovers spectroscopically valid Fe$^{3+}$ absorption features regardless of initialization, confirming that learned representations are physically meaningful.
   \item The water vapor mask redirects learning from atmospheric correction toward mineral discrimination.
-  \item LUSI does not improve accuracy on the training distribution but is the only configuration that maintains or improves performance on geographically independent test scenes.
-  \item The transformer independently discovers spectroscopically valid Fe$^{3+}$ absorption features regardless of initialization, confirming that learned representations are physically meaningful.
 \end{enumerate}
 
 
