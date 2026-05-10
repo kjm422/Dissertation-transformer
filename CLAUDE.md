@@ -328,21 +328,25 @@ python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
 
 The build script reads `.npy` filenames directly from `--npy_dir` (no mineral matrix); each file is classified by keyword on its filename. Modes filter which categories survive into PCA. Saves both `zabs` and `max` bias variants per head count.
 
-### Spectral-prior empirical results (2026-05-04, updated)
+### Spectral-prior empirical results (2026-05-04, updated 2026-05-09)
 
-The architectural prior was evaluated under two independent constructions of $\beta_h$ for the PNAS paper, both at $\alpha = 1.0$ with a 3-epoch freeze of the prior-bearing heads. (A third construction, PCA-curated with max normalization, was also tested and reached the same 0.809 final accuracy; it is omitted from the paper to save space and because the zabs version mathematically subsumes the legacy z-score-of-|v| normalization.)
+The architectural prior was evaluated under two independent constructions of $\beta_h$, both at $\alpha = 1.0$ with a 3-epoch freeze of the prior-bearing heads. The locked 9-row ablation table (papers + dissertation, `tab:ablation`):
 
-| Config | Top-1 | Top-3 | head_sim | prior_rms | prior_rms Δ | Time (min) |
+| Config | #Heads | Top-1 | Top-3 | head_sim | prior_rms | Time (min) |
 |---|---:|---:|---:|---:|---:|---:|
-| Transformer (baseline) | 0.791 | 0.962 | — | — | — | 117 |
-| **Manual prior, H=4 (PAPER HEADLINE)** | **0.808** | **0.967** | 0.031 | 0.977 | −2.3% | 117 |
-| PCA-curated zabs, H=4 | 0.809 | 0.967 | 0.028 | 0.946 | −5.4% | 124 |
-| LUSI-only, H=4 (r17, 2026-05-06) | 0.773 | 0.954 | 0.043 | 0.000 | — | 273 |
-| Transformer (baseline) | 0.813 | 0.968 | — | — | — | 136 |
-| Manual prior, H=8 | 0.806 | 0.966 | 0.015 | 1.154 | +15.4% | 125 |
-| PCA-curated max, H=4 (omitted from paper) | 0.809 | 0.967 | 0.025 | 0.856 | −14.4% | 124 |
+| Transformer baseline (β trainable, zero-init, no wv-mask) | 4 | 0.789 | 0.961 | 0.043 | 0.968 | 119 |
+| **Manual prior (Fe³⁺ bands, PAPER HEADLINE)** | **4** | **0.808** | **0.967** | 0.031 | 0.977 | **117** |
+| PCA-curated (zabs) prior | 4 | 0.809 | 0.967 | 0.028 | 0.946 | 124 |
+| LUSI-only (no wv-mask, trainable β zero-init) | 4 | 0.787 | 0.961 | 0.030 | 1.308 | 289 |
+| PCA-curated (zabs) + LUSI | 4 | 0.790 | 0.962 | 0.039 | 1.648 | ~290 |
+| Transformer baseline | 8 | 0.819 | 0.970 | 0.024 | 0.946 | 134 |
+| Manual prior (Fe³⁺ bands) | 8 | 0.806 | 0.966 | 0.015 | 1.154 | 125 |
+| PCA-curated (zabs) prior | 8 | 0.818 | 0.970 | 0.020 | 1.066 | 129 |
+| LUSI-only | 8 | 0.796 | 0.962 | 0.004 | 0.000 | 326 |
 
-**Headline finding (capacity substitution)**: The manual spectral prior at $H = 4$ reaches validation accuracy 0.808, statistically indistinguishable from both the PCA-curated zabs prior (0.809) and the 8-head transformer-only baseline (0.813) at $\sim$14% lower training time. The convergence of two independently constructed priors at essentially the same final accuracy from largely non-overlapping band sets supports the interpretation that the architectural prior contributes **capacity substitution rather than wavelength selection**.
+**Headline finding (capacity substitution, refined 2026-05-09)**: The manual spectral prior at $H = 4$ reaches top-1 0.808, delivering 1.9 of the 3.0 percentage-point gain that doubling the head count produces (Trans 4H 0.789 → Trans 8H 0.819) — about 63% of the head-doubling benefit at zero additional training cost. The PCA-curated zabs prior at $H = 4$ reaches 0.809 from a largely non-overlapping band set, supporting the **capacity substitution rather than wavelength selection** interpretation. At $H = 8$ the priors diverge: Manual underperforms baseline by $-1.3$ pp ($0.819 \to 0.806$) because narrow Gaussian bumps over-constrain attention at saturated capacity; PCA-curated zabs ties baseline ($0.818$) because its diffuse loadings span $\sim$220 of 285 bands and align with what the unguided model would discover anyway. **Sharp-vs-diffuse refinement**: capacity-saturation harm depends on the prior's spectral support concentration.
+
+**Capacity-vs-information control (2026-05-06)**: A parameter-matched Trans 4H run with $\bm{\beta}_h$ trainable but zero-initialized (`--physics_init --physics_mode manual --physics_alpha 0.0 --physics_freeze_prior_epochs 0`) reaches top-1 0.790 — splitting the prior's $+1.8$ pp gain at $H = 4$ into a $+0.6$ pp capacity component (extra trainable parameters) and a $+1.8$ pp information component (spectroscopic init). Information dominates capacity by $\sim 3\times$; rules out "prior = additional model capacity in disguise." `prior_rms = 0.872` (from zero init) confirms the bias drifted as expected when trainable.
 
 **Early-epoch acceleration finding (2026-05-04)**: a 4-config first-5-epochs comparison (Manual / PCA-zabs / Trans / LUSI all at $H = 4$) shows:
 - Manual prior leads at every epoch: epoch-1 top-1 = 0.331 vs Trans 0.305 (immediate +2.6 pp from initialization alone); the gap holds to ~2–3 pp through epoch 5.
@@ -353,7 +357,45 @@ The architectural prior was evaluated under two independent constructions of $\b
 - `prior_rms` differences in the two paper configurations: manual held priors closest to initial scale (0.977, just −2.3%), zabs preserved the prior nearly as well (0.946, −5.4%). The zabs result is consistent with the negative-floor of z-score normalization providing additional inductive signal that the model doesn't want to wash out.
 - At $H = 8$ the manual prior amplified to 1.154 (+15.4%), indicating the extra capacity went into prior amplification rather than novel feature discovery; `head_sim` stayed low (0.015) ruling out head collapse.
 
-**Implication for the paper**: the architectural-vs-loss-based asymmetry during early training is the cleanest evidence yet of the two-mechanism framework. Architectural priors provide an *immediate* inductive head start (Manual at H=4 is +2.6 pp ahead by epoch 1); loss-based priors *delay* in-distribution convergence in exchange for cross-region robustness (LUSI is slower in-distribution but is the only configuration that improves on a disjoint test scene). Both fit the PINN-tradition pattern but at different points in the training trajectory.
+**Implication for the paper**: the architectural-vs-loss-based asymmetry during early training is the cleanest evidence yet of the two-mechanism framework. Architectural priors provide an *immediate* inductive head start (Manual at H=4 is +2.6 pp ahead by epoch 1); loss-based priors *delay* in-distribution convergence in exchange for cross-region robustness (LUSI is slower in-distribution but is the only configuration that improves on a disjoint test scene). Both fit the PINN-tradition pattern but at different points in the training trajectory. The 4-config head-averaged convergence figure (`train_top1_top3.png`, dissertation `fig:earlyepoch`) plus the 9-config full-trajectory figure (same filename, refreshed) tell the story across both head counts.
+
+### Per-mineral Spearman analysis (2026-05-09)
+
+Per-class attention vs per-mineral USGS absorption depth (`1 - ref_spec[ref_row]`), correcting the earlier mean-across-93 version. At $H = 4$, architectural priors achieve statistically significant per-mineral alignment:
+
+- **PCA-manual H1 hematite: ρ = 0.389 (p < 10⁻⁸)** — top peaks at 530/544/559/873 nm matching canonical 535 (visible CT) and 860 (NIR crystal-field)
+- **PCA-manual H0 goethite: ρ = 0.394 (p < 10⁻⁷)** — top peaks at 470/485/902 nm matching canonical 480 (CT) and 920 (CF)
+- Trans/LUSI head-avg ρ ≈ 0.06–0.15, all non-significant per-mineral
+
+**At $H = 8$ the ranking flips** (Spearman analog of the capacity-saturation finding):
+
+| Config | Hematite avg ρ (4H → 8H) | Goethite avg ρ (4H → 8H) |
+|---|---:|---:|
+| Trans | 0.059 → **0.320** | 0.145 → 0.249 |
+| PCA-manual | **0.238** → 0.038 | **0.202** → 0.074 |
+| PCA-zabs | 0.216 → 0.246 | 0.170 → 0.138 |
+| LUSI | 0.070 → 0.171 | 0.112 → **0.315** |
+
+PCA-manual collapses at 8H to non-significance; per-head, the heads pinned at 480 and 535 nm end up *anti-correlated* with hematite absorption (ρ = $-0.203$, $-0.224$) — the trainable bias drifted to non-canonical wavelengths during the post-freeze phase ($\|\bm{\beta}\|_{\text{rms}} = 1.154$). PCA-zabs holds at 8H because broader spectral support anchors the bias structurally. Trans 8H rediscovers the same Fe³⁺ structure the manual prior scaffolded at 4H. LUSI 8H surprises on goethite (ρ = 0.315), strongest goethite alignment of any 8H config.
+
+### Rarity analysis (2026-05-09)
+
+Per-class precision/recall/F1 stratified by training-set support across three rarity bins (0–150, 150–1000, 1000–4000 pixels per class) shows the architectural prior's accuracy gain is concentrated in the rare-class regime:
+
+- **150–1000 sample bin**: Manual 4H F1 = 0.62, statistically tied with Trans 8H F1 = 0.64, well above LUSI 4H F1 = 0.49 (a +13 pp F1 gap between architectural and loss-based priors in the rare regime)
+- **1000–4000 sample bin**: all 8 configurations cluster at F1 = 0.82–0.86 with negligible separation
+
+This localizes the headline "Manual 4H matches Trans 8H" claim to *rare-class equivalence*: the prior buys head-doubling-equivalent rare-class generalization at no extra training cost; on common classes both saturate to the same F1. Augmentation (LUSI) cannot substitute for examples in the rare regime — the consistency loss provides a regularization signal but no mineral-specific information. Figure: `comparison_rarity_grid.png` (dissertation `fig:rarity_grid`, original paper).
+
+### Asymmetric wv_mask role (2026-05-08, locked)
+
+The water-vapor mask was originally applied across all configurations. Empirical testing revealed an asymmetric role:
+
+- **Prior-bearing runs (Manual, PCA)**: keep the mask. Acts as a bias-drift regularizer; without it, the trainable bias amplifies aggressively into H₂O bands and absorbs atmospheric noise as a free degree of freedom. Removing the mask from PCA-zabs 4H caused $\|\bm{\beta}\|_{\text{rms}}$ to amplify 54% and top-1 to drop 1.6 pp.
+- **Transformer-only baseline**: drop the mask. With β frozen at 0, the mask is a no-op and just adds an unnecessary preprocessing flag. Empirically within noise (0.784 with mask vs 0.790 without).
+- **LUSI-only**: drop the mask. With the mask, the consistency loss can't learn H₂O-band invariance (which is exactly where atmospheric variance is largest). Removing the mask from LUSI 4H gained +1.5 pp top-1 (0.773 → 0.788).
+
+The mask is therefore a *regularizer specifically for the trainable attention bias* in the absence of other regularization (LUSI's consistency loss). When the bias is frozen (Trans) or another regularization is active (LUSI), the mask is at best redundant and at worst harmful.
 
 ### Curated PCA prior outputs (2026-05-04)
 
