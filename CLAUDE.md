@@ -137,14 +137,62 @@ PCA on raw reflectance (no continuum removal) breaks through the continuum-remov
 - Rescues Head 0: no-continuum PC1 maps to VNIR Fe3+ instead of atmospheric proxy
 - Continuum removal was counterproductive: it discards albedo information useful for TOA classification
 
-## Cross-Scene Generalization (SW US desert, trained on Africa/Middle East)
-| Model | Train region | SW US (new) | Change |
-|-------|-------------|-------------|--------|
-| LUSI 8H | 0.901 | 0.927 | +2.6% |
-| Transformer 8H | 0.917 | 0.900 | -1.7% |
-| PCA 8H nocont | 0.917 | 0.859 | -5.8% |
+## Cross-Region Deployment (SW US desert, trained on Africa/Middle East)
 
-LUSI is the only model that improves on the new scene — consistent with Vapnik's theory that statistical invariants help when test conditions differ from training. PCA degrades most due to region-specific priors.
+**Current (2026-05-11): 20 SW granules with ≥20% Group-1 mineral fraction.** `tab:crossscene` in all three documents (PNAS, original paper, dissertation) uses these values, covering both head counts and both top-1 / top-3:
+
+| Configuration | Train top-1 | SW top-1 | Train top-3 | SW top-3 |
+| --- | ---: | ---: | ---: | ---: |
+| Trans 4H | 0.789 | 0.669 | 0.961 | 0.877 |
+| Manual 4H | 0.808 | **0.724** | 0.967 | **0.919** |
+| PCA-zabs 4H | 0.809 | 0.644 | 0.967 | 0.868 |
+| LUSI 4H | 0.787 | 0.634 | 0.961 | 0.875 |
+| Trans 8H | 0.819 | 0.683 | 0.970 | 0.902 |
+| Manual 8H | 0.806 | 0.699 | 0.966 | 0.896 |
+| PCA-zabs 8H | 0.818 | **0.705** | 0.970 | **0.910** |
+| LUSI 8H | 0.796 | 0.666 | 0.962 | 0.893 |
+
+**Key findings:**
+
+- **Cross-region top-1 drops 8–17 pp**, but **top-3 stays in the 0.87–0.92 range** across all configurations — the model places the correct mineral in its top-3 guesses for ~88–92% of SW pixels.
+- **Manual prior wins at 4H** on every SW metric (top-1 0.724, top-3 0.919; +5.5 pp top-1 over Trans 4H, +9.0 pp over LUSI 4H).
+- **PCA-curated prior wins at 8H** on every SW metric (top-1 0.705, top-3 0.910). Narrow lead over Manual 8H (+0.6 pp top-1).
+- **Sharp-vs-diffuse split at different head counts**: at 4H the sharp manual prior generalizes best; at 8H the diffuse PCA-curated prior takes over. Mirrors the in-distribution capacity-saturation pattern of Table `tab:ablation`.
+- **LUSI never leads top-1 or top-3** at either head count. Macro-recall is its only narrow edge at 4H (0.207, +0.13 pp over Manual); at 8H, PCA-zabs has highest macro-recall (0.207 vs LUSI 0.199).
+
+Aggregator: `kelli_scripts/granule_inference_summary_SW.py` reads predictions from `Data/attn_outputs_<config>/SW/Xformer_predictSW_<scene_id>.npy`, filters to granules with ≥20% G1 mineral fraction (capped at 20), writes `Data/granule_inference_summary_SW.csv` with both unweighted and pixel-weighted means. Pixel-weighted means use `Σ_g (metric_g × n_g) / Σ_g n_g` where n_g is the per-granule mineral-pixel count; for top-1 and top-3 this is equivalent to micro accuracy across all mineral pixels.
+
+### History (superseded — project context only, do not cite in prose)
+
+- **2026-05-10 14-granule mean**: ran on the first 15 sorted SW granules (14 with mineral pixels). Included rows 0–1 with 2k and 58k mineral pixels respectively that produced 6–43% per-granule accuracy and dragged the unweighted mean down to ~0.61–0.64 (vs ~0.67–0.72 with the 20-granule ≥20% filter). Superseded by the 20-granule evaluation on 2026-05-11.
+- **2026-05-04 legacy 8H "no-continuum" pixel-level**: train-region 0.917 / 0.917 / 0.901 for Trans / PCA-nocont / LUSI on randomly-sampled SW pixels (+2.6 / −1.7 / −5.8 pp deltas). Used a configuration not directly comparable to the locked Table `tab:ablation` runs (no continuum removal, no Manual prior). Superseded by the locked-pipeline granule-mean evaluation.
+- **Dissertation §10.4 removed (2026-05-11)**: the entire "Cross-Region Granule-Level Inference" section (including the 14-granule per-granule breakdown table `tab:granule_inference_SW`, the 8-head extension subsection `subsec:cross_region_granule_8H`, and `tab:granule_inference_SW_8H`) was removed when `tab:crossscene` was upgraded to the 20-granule 8-row format. The summary table now covers both head counts directly. Three external `\ref{sec:cross_region_granule}` cross-references in Ch 9 / Ch 10 / Ch 11 were repointed to `tab:crossscene` or dropped.
+
+**Future work flagged:** a pixel-level cross-region evaluation with the locked $H = 8$ configurations (continuum-removed pipeline) has not been run. This would establish whether LUSI's legacy pixel-level cross-region win was a property of the no-continuum pipeline specifically or a general property of statistical-invariance regularization. The current granule-scale evaluation is the closest cross-region test for the locked configurations.
+
+## Granule-level full-image inference (2026-05-10)
+
+Full-image inference on four EMIT granules using `kelli_scripts/UseXformer_fullimageinference.py` and aggregated by `kelli_scripts/granule_inference_summary.py` → `Data/granule_inference_summary.csv`. Inference takes ~45 sec per granule on M4 Max MPS. Predictions co-located with each checkpoint at `Data/attn_outputs_<config>/Xformer_predictions_Image{N}.npy` (plus sibling `*_attention.npy`).
+
+| Config | Img 0 | Img 4 | Img 50 | Img 100 | Mean | Mean (excl Img 0) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Trans 4H | **0.678** | 0.898 | 0.827 | 0.897 | 0.825 | 0.874 |
+| Manual 4H | 0.660 | **0.909** | 0.836 | 0.901 | **0.826** | 0.882 |
+| PCA-zabs 4H | 0.607 | 0.905 | **0.847** | **0.913** | 0.818 | **0.888** |
+| LUSI 4H | 0.649 | 0.890 | 0.808 | 0.896 | 0.811 | 0.865 |
+
+**Key findings:**
+
+- **Top-1 wins distribute across configs**: Trans wins Img 0 (the anomaly), Manual wins Img 4, PCA-zabs wins Img 50 + Img 100. LUSI wins zero granules.
+- **Excluding Img 0, the granule ranking is the validation ranking**: PCA-zabs > Manual > Trans > LUSI, same order as held-out validation pool. Validation accuracy is a reasonable proxy for granule-level deployment accuracy on representative scenes.
+- **Macro recall favors architectural priors on every granule**: Trans never has highest macro recall (mean 0.293 vs Manual 0.323, LUSI 0.322, PCA-zabs 0.319). Granule-level realization of the rarity-bin finding from Ch 9.
+- **Top-3 saturates on representative granules** (~0.987–0.999 across all configs on Img 4/50/100). Top-1 and macro F1 are the discriminating metrics at deployment scale.
+- **LUSI's in-distribution penalty is consistent at granule scale**: lowest top-1 on every granule, mean 0.811 (~1.5 pp below Manual). Cross-region win remains its sole advantage.
+- **Image 0 is a deployment-failure case for architectural priors**: PCA-zabs F1 on class 28 (Fe-hydroxide) is 0.49 on Img 0 vs 0.95 on Img 4/50, with same checkpoint. Image 0's class-28 pixels deviate from canonical Fe-hydroxide signature; prior-bearing models pull back rather than commit. Granule-scale analog of the cross-region degradation table — priors crisp up canonical pixels and trade some accuracy on atypical ones.
+- **Granule class composition**: Img 0 (163k mineral, atypical class-28); Img 4 (1.59M, classes 47/45/28 = 99%); Img 50 (1.45M, goethite-heavy classes 8/46/40 = 87%); Img 100 (1.59M, goethite-heavy classes 8/46/7/45/49 = 99%).
+- **Rare-class lift visible at granule scale**: Img 100 class 32 (117 px) F1 jumps 0.04 (Trans) → 0.32 (PCA-zabs); Img 50 classes 21/22 (~1.5k px each) gain +20–24 pp F1 under architectural prior.
+
+Discussion lives in dissertation Ch 10 §10.3 (`sec:full_image_inference`, `tab:granule_inference`).
 
 ## Output Folders Convention
 Training outputs are in `Data/attn_outputs_{config}/`:
@@ -172,7 +220,7 @@ Two-part structure with shared intro/background (Chapters 1-3) and closing (Chap
 
 Now 11 chapters. The former Ch 8 (Physics-Informed Spectral Priors) and Ch 9 (LUSI Consistency Regularization) were merged into a single new Ch 8 (Optional Physics-Informed Extensions) with §8.1 = Physics priors, §8.2 = LUSI. Ablation/generalization/conclusions chapters renumbered down by one. Existing labels preserved: `chap:phys_extensions` (new parent), `chap:physics` (now §8.1, label retained), `chap:lusi` (now §8.2, label retained). All `Chapter~\ref{chap:physics}` and `Chapter~\ref{chap:lusi}` inline references converted to `Section~\ref{...}`. Paper mirrors this structure under `\section{Optional physics-informed extensions}` (label `sec:phys_extensions`).
 
-- **Ch 1:** EMIT pipeline bottlenecks (ISOFIT OE deficiencies, AOD masking, H2O biases, shadowing, soil fraction threshold). Limitations paragraph generalized to "operational SDS pipelines" (with EMIT as concrete example); now mentions the L2A→L2B mineral-identification step (per-pixel spectral-library matching against tens to hundreds of reference spectra) as a second per-pixel cost contributor on top of atmospheric correction. RTM-bypass section retitled "A Next-Generation Remote Sensing Pipeline." New "post-hoc direct retrieval" terminology adopted alongside "RTM bypass" — both terms now used: "post-hoc direct retrieval" is the recognized architectural category (citing Keely 2025, Li 2022 as direct-retrieval analogues), "RTM bypass" is the paper-internal shorthand emphasizing the no-RTM-at-training distinction. High-AOD recovery argument added to contributions and conclusions: post-hoc direct retrieval potentially recovers pixels EMIT's L2 pipeline discards at AOD > 0.5, since the model never invokes the failing ISOFIT inversion. Validation paths flagged in conclusions: AOD-binned accuracy curves, cross-sensor validation (PRISMA, EnMAP, CHIME), in-situ at high-AOD targets (Bodélé Depression, Lake Eyre).
+- **Ch 1:** EMIT pipeline bottlenecks (ISOFIT OE deficiencies, AOD masking, H2O biases, shadowing, soil fraction threshold). Limitations paragraph generalized to "operational SDS pipelines" (with EMIT as concrete example); now mentions the L2A→L2B mineral-identification step (per-pixel spectral-library matching against tens to hundreds of reference spectra) as a second per-pixel cost contributor on top of atmospheric correction. RTM-bypass section retitled "A Next-Generation Remote Sensing Pipeline." New "post-hoc direct retrieval" terminology adopted alongside "RTM bypass" — both terms now used: "post-hoc direct retrieval" is the recognized architectural category (citing Keely 2025, Li 2022 as direct-retrieval analogues), "RTM bypass" is the paper-internal shorthand emphasizing the no-RTM-at-training distinction. High-AOD recovery framed (2026-05-10 correction, see PNAS framing pass below) as "operational pipeline applies conservative AOD>0.5 quality masks for downstream products" — *not* "ISOFIT inversion fails" (the L2A ATBD explicitly claims OE handles high-AOD; the masking is a downstream conservative quality choice per L2A ATBD constraints/limitations section). Recovery framing in the dissertation is kept as future-work / extrapolation supported by cross-region result; the PNAS paper drops the recovery angle entirely in favor of operational-latency / onboard-processing hook. Validation paths flagged in conclusions: AOD-binned accuracy curves, cross-sensor validation (PRISMA, EnMAP, CHIME), in-situ at high-AOD targets (Bodélé Depression, Lake Eyre).
 - **Ch 2:** Expanded background — data lifecycle, RTM emulation taxonomy (forward vs retrieval, in-line vs post-hoc), OE cost function, spatial paradigms (pixel/superpixel/full-image), Malsky transformer RT emulator, positioning table. New §2.5 "Approaches to Physics-Informed Retrieval" (paper §2.3 mirror) added: brief PINN/theory-guided ML context (Raissi 2019, Karpatne 2017), Wang et al. 2021 distinguished as PCA+attention analogue, LUSI/Vapnik invariance positioning. Wang/Vapnik intro paragraphs in §8.1/§8.2 (paper §6.1/§6.2) shortened with forward-references to avoid redundancy.
 - **Ch 3:** Instrument specs table, Dyson design, vicarious calibration, geometric/radiometric performance table, spectral confusion/unmixing table
 - **Ch 4:** PCA section complete; NMF, autoencoder, comparison sections still TODO
@@ -183,7 +231,7 @@ Now 11 chapters. The former Ch 8 (Physics-Informed Spectral Priors) and Ch 9 (LU
   - **§8.1 PCA-priors prose now mirrors paper:** TOA decomposition with full 6S form (Eq. `eq:toa_full`) reducing to first-order approximation (Eq. `eq:toa_decomp`) under $S\rho_{\text{surface}} \ll 1$; cited Vermote 1997 as canonical 6S source; Wang et al. 2021 distinguished as a related-but-distinct PCA+attention construction; "what the prior is NOT" disclaimer paragraph; orthogonality caveat noting absolute-value profiles aren't orthogonal but are derived from orthogonal modes; cautious framing on visible Fe³⁺ feature preservation (530/670 nm sit in Rayleigh-affected region; 860 nm is favorable).
   - **§8.2 LUSI prose substantially revised** (and mirrored to paper): theoretical foundation now explicitly framed as a *transformation-based neural approximation* of formal LUSI rather than a literal RKHS implementation — closes the gap between Vapnik's hard-constraint setup and the soft consistency loss actually used. Teacher/student terminology introduced in the theory subsection (with `\cite{hinton2015distilling}`) before being used in the consistency loss. KL ordering corrected: was `D_KL(p_trans||p_orig)` (reverse KL, mode-seeking) — now `D_KL(p_orig^sg||p_trans)` (forward KL, mode-covering, matches r15 implementation). Stop-gradient annotation `^sg` added to teacher term. Tilt-predicate framing softened — drops the overclaim that aerosol+Rayleigh is "approximately linear over VSWIR" and the λ⁻⁴ derivation; now framed as a "conservative label-preserving perturbation, not a full atmospheric model." TOA-vs-surface disclaimer added in theory subsection: predicates are label-preserving directions in TOA-input space, not literal atmospheric corrections; explicitly does not assume `ρ_toa ≈ ρ_surface`. All "nuisance" jargon (5 distinct phrasings across both files) replaced with "label-preserving" or simplified prose.
 - **Ch 9:** Ablation Study and Spectral Attention Analysis — full ablation table (all configs), per-head attention validation, Spearman + peak coincidence metrics, 4 key findings about physics priors. (formerly Ch 10)
-- **Ch 10:** Generalization and Cross-Platform Analysis — partial. Cross-region generalization results (LUSI +2.6% on new scene). Part I vs Part II comparison, full-image inference timing, PACE transformer extensibility still TODO. (formerly Ch 11)
+- **Ch 10:** Generalization and Cross-Platform Analysis — partial. Cross-region generalization results: 20-granule SW deployment (≥20% G1 fraction) shows 8–17 pp top-1 degradation; Manual 4H leads SW top-1 (0.724) at constrained capacity, PCA-curated 8H leads (0.705) at saturated capacity; LUSI never leads on top-1 or top-3 (Table~`tab:crossscene`, revised 2026-05-11). Part I vs Part II comparison, full-image inference timing, PACE transformer extensibility still TODO. (formerly Ch 11)
 - **Ch 11:** Conclusions and Future Work — summary of contributions, key findings, limitations (4 items), future work (5 items). (formerly Ch 12)
 
 ### Remaining TODOs
@@ -217,24 +265,28 @@ Notation conventions (updated 2026-04-14): $\mathbf{W}^p \in \R^{N \times L}$ fo
   - **Loss-based prior**: LUSI consistency regularization, statistical invariants of atmospheric transfer adapted from Vapnik-Izmailov
 - **Polished thesis paragraph** (end-of-Introduction; cite `karpatne2017tgds`, `raissi2019pinn`, `vapnik2020`):
 
-  > "We present a cross-attention transformer that is physics-informed in the sense of Karpatne et al. and Raissi et al.: spectroscopic priors are injected through the attention bias $\bm{\beta}_h$, and statistical invariants drawn from atmospheric transfer enter through a consistency loss adapted from Vapnik and Izmailov. The two mechanisms realize the two foundational ingredients of physics-informed deep learning — architectural prior initialization and physics-driven loss regularization — in an attention-based architecture, made natural and inspectable by the attention bias's role as an explicit physics-injection interface. We demonstrate this on EMIT top-of-atmosphere hyperspectral observations: a 4-head transformer with a manual spectral prior matches the accuracy of an 8-head transformer-only baseline at 14% lower training cost, and consistency regularization is the only configuration that maintains accuracy on a geographically disjoint test scene where unregularized configurations degrade."
+  > "We present a cross-attention transformer that is physics-informed in the sense of Karpatne et al. and Raissi et al.: spectroscopic priors are injected through the attention bias $\bm{\beta}_h$, and statistical invariants drawn from atmospheric transfer enter through a consistency loss adapted from Vapnik and Izmailov. The two mechanisms instantiate two of the foundational injection modes documented in the physics-informed deep learning literature — architectural prior initialization and physics-driven loss regularization — in an attention-based architecture, made natural and inspectable by the attention bias's role as an explicit physics-injection interface. We demonstrate this on EMIT top-of-atmosphere hyperspectral observations: a 4-head transformer with a manual spectral prior matches the accuracy of an 8-head transformer-only baseline at 14% lower training cost, and statistical-invariance regularization is the only configuration that maintains accuracy on a geographically disjoint test scene where unregularized configurations degrade."
 
-- **Significance Statement draft** (118 words, broad-audience, the most distinctive PNAS element):
+  *(Softened 2026-05-10: was "the two foundational ingredients" — superseded because no canonical PINN literature defines exactly two ingredients; Karpatne 2017 lists 6+. "Two of the foundational injection modes" with explicit citations is honest and survives reviewer scrutiny.)*
 
-  > "Mapping Earth's surface mineralogy from orbiting hyperspectral sensors is critical for understanding mineral dust's role in climate, but the standard pipeline rejects the very high-aerosol pixels it was designed to study because the underlying radiative transfer inversion fails. We show that a cross-attention transformer trained directly on uncorrected top-of-atmosphere reflectance replaces this multi-step pipeline with a single forward pass, recovering canonical iron-oxide absorption features through interpretable attention. The approach realizes physics-informed deep learning for an attention-based architecture: spectroscopic priors enter through attention bias initialization, and statistical invariants drawn from atmospheric transfer enter through consistency regularization. The result is a transferable framework for injecting domain knowledge into transformer models in any physical-science setting where labeled data is bounded by an upstream physical model."
+- **Significance Statement** (117 words, current version after 2026-05-10 framing pass):
+
+  > "Mapping Earth's surface mineralogy from orbiting hyperspectral sensors is critical for understanding mineral dust's role in climate, but operational pipelines depend on iterative per-pixel radiative transfer inversion and spectral library matching that delivers products with multi-month latency. We show that a cross-attention transformer trained on uncorrected top-of-atmosphere reflectance replaces this multi-step pipeline with a single forward pass, recovering canonical iron-oxide absorption features through interpretable attention. The approach realizes physics-informed deep learning in attention architectures through two complementary mechanisms: spectroscopic priors and statistical-invariance regularization. Inference orders of magnitude faster than the operational pipeline opens pathways to onboard processing, near-realtime delivery, and reduced operational cost. The framework transfers to any physical-science setting where labels come from an upstream physical model."
+
+  *(Replaces 2026-05-04 draft that opened with "rejects the very high-aerosol pixels...because the underlying radiative transfer inversion fails" — superseded; the L2A ATBD claims OE handles high-AOD, the masking is a downstream conservative quality choice. New hook is operational latency, citing L2B ATBD's 2-month median delivery latency.)*
 
 - **Results structure** (3 subsections, with priors and LUSI as parallel physics-injection mechanisms — *not* as method + side-experiment):
   1. Cross-attention transformer recovers Fe³⁺ diagnostics from TOA reflectance (uses Fig: per-head attention)
-  2. Two complementary physics-injection mechanisms: (2a) attention-bias initialization substitutes for architectural capacity (Table: ablation); (2b) consistency regularization improves cross-region generalization where unregularized configurations degrade (Fig: cross-scene bar chart)
-  3. Optional integrative result tying both mechanisms to the high-AOD-recovery argument
+  2. Two complementary physics-injection mechanisms: (2a) attention-bias initialization substitutes for architectural capacity (Table: ablation); (2b) statistical-invariance regularization exposes a robustness-vs-accuracy tradeoff at cross-region granule deployment — LUSI retains the highest macro-recall on SW while all four locked configs degrade similarly on top-1 (Table: crossscene)
+  3. "Together: post-hoc direct retrieval at deployment scale" — combines the two-mechanism contribution with full-granule inference verification + comparison to L2B median delivery latency. (Was previously framed around high-AOD recovery; reframed 2026-05-10 to operational-scale deployment.)
 
-- **LUSI in/out-of-distribution narrative**: re-frame the existing observation (LUSI hurts in-distribution by ~0.4 pp but is the only configuration that *improves* on the SW US scene by +2.6 pp) as a *feature* aligned with PINN literature: physics-driven regularization can trade in-distribution training error for better extrapolation to physics-respecting test conditions. This is PNAS-friendly because it demonstrates the framework, not just the numbers.
+- **LUSI in/out-of-distribution narrative (revised 2026-05-11)**: legacy framing was "LUSI is the only configuration that improves on SW (+2.6 pp pixel-level)"; superseded by locked-pipeline granule-scale evaluation in which no configuration improves on SW. New narrative: LUSI exposes a robustness-vs-accuracy tradeoff — it retains the highest macro-recall on SW at both 4H (0.218) and 8H (0.210) while losing top-1 dominance under cross-region deployment. Still PNAS-friendly because the tradeoff is consistent with PINN-literature observations that physics-driven regularization sacrifices in-distribution accuracy for invariance-sensitive metrics; weaker headline than the legacy +2.6 pp finding but defensible.
 
 - **Main-text figures/tables (max 4)**:
   1. Architecture pipeline (`architecture_diagram.pdf`)
   2. Per-head attention plot (`4Hxformer_attnplot.png`)
   3. Headline ablation table (Trans 4H/8H × Manual 4H/8H + curated PCA 4H)
-  4. Cross-scene generalization bar chart (LUSI +2.6%, Trans −1.7%, PCA −5.8%) — needs to be created
+  4. Cross-region deployment bar chart (uniform ~18 pp top-1 degradation across all four locked 8H configs on SW; LUSI macro-recall edge) — needs to be created from the locked-pipeline granule-mean data (Table~`tab:crossscene`)
 
 - **Move to SI Appendix (single PDF)**:
   - Tables: `tab:emulation_spectrum`, `tab:fe_diagnostics`, `tab:notation`, `tab:arch_inspirations`, `tab:phys_interventions`
@@ -247,7 +299,35 @@ Notation conventions (updated 2026-04-14): $\mathbf{W}^p \in \R^{N \times L}$ fo
 
 - **Two overclaim warnings to soften** when finalizing the thesis paragraph: "available only in transformers, not in CNNs or MLPs" → "made natural and inspectable by the attention bias's role as an explicit physics-injection interface" (CNN attention modules exist; PIT for fluid dynamics exists). "For the first time in an attention-based architecture" → "applied to top-of-atmosphere hyperspectral mineral classification" (other physics-informed transformers exist in fluid dynamics and atmospheric chemistry).
 
-- **Workflow recommendation**: fork as `partII_paper_PNAS.tex` rather than editing in place — keeps the RSE-length version available for the dissertation companion or RSE fallback.
+- **Workflow recommendation**: fork as `partII_paper_PNAS.tex` rather than editing in place — keeps the RSE-length version available for the dissertation companion or RSE fallback. **Done as of 2026-05-10**: PNAS version lives at `Disseratation_txt/PaperPNAS/partII_PNAS.tex`; original journal-format paper remains at `Disseratation_txt/PaperofPartII/partII_paper.tex`.
+
+### PNAS framing pass (2026-05-10)
+
+Substantive corrections applied to PNAS paper after re-reading L2A and L2B ATBDs. Parallel corrections also applied to the original journal paper and the dissertation where the same misframings appeared.
+
+**(1) AOD masking — mechanism corrected:**
+- *Old framing* (used in PNAS sig statement, abstract, §1, results §2.3, discussion): "the standard pipeline rejects the very high-aerosol pixels because the underlying RTM inversion fails to converge" / "ISOFIT's convergence behavior at high aerosol loads" / "the failing ISOFIT inversion".
+- *L2A ATBD constraints/limitations section explicitly says the opposite*: OE retrieval has "the ability to estimate atmospheric aerosol constituents in high AOD conditions"; the AOD>0.5 mask is a *conservative downstream quality control* applied between L2A and L3 ("These thresholds control the pixels that appear in the mask and enters the level 3 stage"); investigators *can* use the masked pixels but performance guarantees lapse.
+- *Corrected framing*: "operational pipeline applies conservative AOD>0.5 quality masks for downstream products" / "operational pipeline's conservative downstream-quality threshold" / "L2A surface reflectance uncertainty grows under heavy atmospheric loading even when the inversion technically converges". Cites `emit_l2a_atbd` (same citation, accurate now) and `emit_l2b_atbd` for the latency angle.
+
+**(2) PNAS hook — high-AOD-recovery angle dropped, replaced with operational-cost / latency angle:**
+- High-AOD recovery was the original PNAS hook but doesn't survive scrutiny: the user's model is trained on AOD≤0.5 labels (operational pipeline excludes high-AOD from L2B), so claims of accurate high-AOD predictions are unvalidated extrapolation. The user is also producing L2B-equivalent classifications (per-pixel mineral IDs), not L3 aggregations — the "L3 gap" framing isn't even what their work fills.
+- New PNAS hook: **operational latency**. Cites L2B ATBD's 2-month median delivery latency from acquisition (dominated by downlink, queue, ingest, multi-stage L2A→L2B→L3 processing). Single-forward-pass replacement opens onboard processing, near-realtime ground delivery, and reduced operational cost.
+- New PNAS discussion paragraph "Operational deployment: latency, onboard processing, and mission cost" anchors three operational implications (time-sensitive applications, ground-segment cost, onboard inference). Old "High-AOD pixel recovery as the operational implication" discussion paragraph removed.
+- High-AOD recovery angle **kept** in the dissertation as a future-work item (was already careful there at lines 2369–2370 / 2383); the dissertation's pathway-to-recovery prose at lines 2156 and 2351/2360 was reworded to drop "ISOFIT failing" framing but kept as future-work pathway.
+
+**(3) PINN literature framing — softened:**
+- *Old*: "the two foundational ingredients of physics-informed deep learning" — implies a canonical two-ingredient definition.
+- *Reality*: Karpatne 2017 lists 6+ injection mechanisms; Raissi 2019 is specifically about PDE-residual losses; no canonical "two ingredients" framework exists.
+- *Corrected*: "two of the foundational injection modes documented in the physics-informed deep learning literature" with explicit `karpatne2017tgds, raissi2019pinn` citations on the same sentence. Applied in PNAS abstract, body §1, and discussion (`The two-mechanism framework as a transferable recipe.`).
+
+**(4) Terminology — statistical-invariance regularization vs consistency regularization:**
+- Mechanism: consistency regularization (semi-supervised mechanism, soft KL loss between augmented and original passes — what the implementation actually does).
+- Theory: statistical invariants (Vapnik & Izmailov 2019/2020 LUSI — what the loss is *motivated by*).
+- The implementation is a transformation-based neural approximation of formal LUSI, not literal RKHS V-functional LUSI.
+- *PNAS top-level claims now use "statistical-invariance regularization"* (sig statement S3, body §1 closing summary, results §2.2 subsection title) to invoke the Vapnik framing.
+- *Detailed methods section retains "consistency regularization"* (lines 292–295) as honest description of the soft-loss mechanism. Abstract uses the hybrid: "consistency-loss regularizer based on Vapnik–Izmailov statistical invariants".
+- Dissertation/original paper retain "LUSI consistency regularization" / "consistency loss" terminology in detailed sections; not propagating the top-level rewording there.
 
 ### Bib entries added during recent revisions
 - `vermote1997sixs` — Vermote et al. 1997, IEEE TGRS 35(3): 675–686. Canonical 6S radiative transfer reference replacing the earlier `schott2007`/`schaepman2006` citations for the TOA decomposition. Both schott2007 and schaepman2006 are no longer cited in either document.
@@ -357,7 +437,7 @@ The architectural prior was evaluated under two independent constructions of $\b
 - `prior_rms` differences in the two paper configurations: manual held priors closest to initial scale (0.977, just −2.3%), zabs preserved the prior nearly as well (0.946, −5.4%). The zabs result is consistent with the negative-floor of z-score normalization providing additional inductive signal that the model doesn't want to wash out.
 - At $H = 8$ the manual prior amplified to 1.154 (+15.4%), indicating the extra capacity went into prior amplification rather than novel feature discovery; `head_sim` stayed low (0.015) ruling out head collapse.
 
-**Implication for the paper**: the architectural-vs-loss-based asymmetry during early training is the cleanest evidence yet of the two-mechanism framework. Architectural priors provide an *immediate* inductive head start (Manual at H=4 is +2.6 pp ahead by epoch 1); loss-based priors *delay* in-distribution convergence in exchange for cross-region robustness (LUSI is slower in-distribution but is the only configuration that improves on a disjoint test scene). Both fit the PINN-tradition pattern but at different points in the training trajectory. The 4-config head-averaged convergence figure (`train_top1_top3.png`, dissertation `fig:earlyepoch`) plus the 9-config full-trajectory figure (same filename, refreshed) tell the story across both head counts.
+**Implication for the paper**: the architectural-vs-loss-based asymmetry during early training is the cleanest evidence yet of the two-mechanism framework. Architectural priors provide an *immediate* inductive head start (Manual at H=4 is +2.6 pp ahead by epoch 1); loss-based priors *delay* in-distribution convergence in exchange for robustness-oriented metrics — LUSI is slower in-distribution and retains the highest cross-region macro-recall under granule-scale deployment but does not lead cross-region top-1 (revised 2026-05-11; the legacy "only configuration that improves on a disjoint test scene" framing was based on superseded no-continuum pipeline values). Both fit the PINN-tradition pattern but at different points in the training trajectory. The 4-config head-averaged convergence figure (`train_top1_top3.png`, dissertation `fig:earlyepoch`) plus the 9-config full-trajectory figure (same filename, refreshed) tell the story across both head counts.
 
 ### Per-mineral Spearman analysis (2026-05-09)
 

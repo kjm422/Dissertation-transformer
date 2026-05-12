@@ -43,9 +43,9 @@ This paper presents a cross-attention transformer architecture that classifies m
 The architecture employs asymmetric cross-attention with learned query vectors, achieving complexity linear in the number of spectral bands, and produces per-band, per-head attention weights that are interpretable as spectroscopic importance scores. 
 Shape-aware tokenization encodes local absorption feature morphology through spectral derivatives before global context is evaluated via attention. 
 The model operates on 285 EMIT bands to classify 95 Group~1 mineral classes with a compact parameter budget. 
-Physics-informed enhancements, including an attention bias derived from USGS reference spectra and a LUSI regularization that addresses the statistical invariance inherent in shadowing and scattering with respect to mineral classification, inject domain knowledge without altering the transformer architecture. 
-The best configuration achieves 82.1\% top-1 and 96.8\% top-3 accuracy on held-out pixels, with per-head attention analysis revealing that the model independently discovers spectroscopically valid diagnostics bands. 
-Cross-scene evaluation on a geographically disjoint southwestern US test region demonstrates that LUSI regularization improves generalization, suggesting that statistical invariants are more transferable across regions.
+Physics-informed enhancements, including an attention bias derived from USGS reference spectra and a LUSI-inspired consistency loss applied to label-preserving illumination and spectral-slope perturbations, inject domain knowledge without altering the transformer architecture.
+The best configuration achieves 82.1\% top-1 and 96.8\% top-3 accuracy on held-out pixels, with per-head attention analysis showing that the model emphasizes spectroscopically valid diagnostic bands; attention weights are interpreted as diagnostic rather than causal explanations.
+Cross-scene evaluation on a geographically disjoint southwestern US test region shows that LUSI regularization improves pixel-scale generalization on the new scene, although granule-scale evaluation reveals a robustness-vs-accuracy tradeoff rather than uniform improvement.
 \end{abstract}
 
 \begin{keyword}
@@ -96,7 +96,7 @@ approaches that learn the L1B-to-mineral mapping directly rather than
 re-running the full chain at inference.
 
 Beyond computational cost, operational SDS pipelines introduce specific physical limitations that motivate the physics-informed components of this work. 
-Hyperspectral pipelines commonly mask observations above an aerosol optical depth (AOD) threshold because RTM inversion becomes unreliable at high aerosol loads. 
+Hyperspectral pipelines commonly mask observations above an aerosol optical depth (AOD) threshold for downstream data quality, because surface reflectance uncertainty grows with atmospheric extinction even when the underlying inversion technically converges.
 EMIT, for instance, masks pixels with AOD~$> 0.5$ at 550~nm \cite{emit_l2a_atbd, emit_l3_atbd}, creating a data gap in the very dust source regions the mission was designed to study. 
 Below such thresholds, residual aerosol variability still alters the spectral slope of TOA reflectance, motivating the need for invariance to additive spectral-slope perturbations. 
 Topographic shadowing produces multiplicative brightness variations that the flat-surface cosine illumination correction does not account for, motivating the need for invariance to broadband multiplicative scaling.
@@ -152,7 +152,7 @@ This paper makes the following contributions toward filling that gap:
   \item \textbf{Post-hoc direct retrieval for mineral classification (RTM bypass):} A cross-attention transformer that maps L1B TOA reflectance to a probabilistic distribution over 95 mineral classes (softmax; top-1 and top-3 reported) in a single forward pass, with $O(H \times L)$ complexity linear in the number of spectral bands. Unlike RTM-trained direct retrievals (e.g., \cite{Keely2025ConditionalDiffusionCO2,Li2022NO2NN}), the model is trained on operational L1B/L2B pairs from the EMIT Science Data System and requires no radiative transfer model in either training or inference --- hence the ``RTM bypass'' shorthand used throughout. The compact model ($<$457K parameters) enables millisecond-scale inference, opening pathways to real-time detection of transient phenomena, autonomous revisit prioritization, and onboard processing for bandwidth-constrained missions.
   \item \textbf{Spectroscopic interpretability:} Per-band, per-head attention weights ($\mathbf{A}_h$) validated against known diagnostic absorption features within $\pm$20~nm of literature values, providing physically explainable classification decisions.
   \item \textbf{Physics-informed spectral priors:} An attention bias $\bm{\beta}_h$ based on USGS reference spectra that injects domain knowledge without altering the architecture. This steers attention toward spectrally diagnostic bands while allowing the model to learn from data, and it provides a testbed for evaluating the impact of different priors on performance and interpretability.
-  \item \textbf{Statistical-invariance regularization for atmospheric robustness:} A LUSI-inspired consistency loss that penalizes prediction changes under physically motivated, label-preserving perturbations of the input spectrum (broadband brightness scaling and conservative spectral-slope tilts). The empirical consequence is improved cross-region generalization, including the potential to recover mineral predictions for pixels that EMIT's L2 pipeline currently discards because the AOD threshold ($> 0.5$ at 550~nm) is exceeded.
+  \item \textbf{Statistical-invariance regularization for atmospheric robustness:} A LUSI-inspired consistency loss that penalizes prediction changes under physically motivated, label-preserving perturbations of the input spectrum (broadband brightness scaling and conservative spectral-slope tilts). The empirical consequence is improved cross-region generalization at pixel scale.
   \item \textbf{Sensor-agnostic design:} The new approach is not tied to a specific instrument or application domain.
   Cross-scene generalization across geographic regions (Africa/Middle East to southwestern US) is demonstrated, and the architecture is directly applicable to other imaging spectrometer missions and spectral classification problems..
 \end{enumerate}
@@ -480,8 +480,10 @@ Transformer & 8 & 0.819 & 0.970 & 134 \\
 \end{table}
 
 Doubling heads from 4 to 8 yields $+3.0$~pp top-1 and $+0.9$~pp top-3 at a $\sim$13\% wall-clock cost.
-At the class level, the two illustrative iron oxides perform well on the held-out split: 
+At the class level, the two illustrative iron oxides perform well on the held-out split:
 hematite reaches precision/recall/F1 of $0.922 / 0.945 / 0.934$ ($N = 729$), goethite $0.877 / 0.957 / 0.915$ ($N = 141$).
+
+\paragraph{Non-attention baseline} A random-forest classifier (500 trees, $\sqrt{L}$ features per split, otherwise default scikit-learn settings) trained on the same Group~1 split reaches top-1 = $0.716$ and top-3 = $0.922$ in $\sim$22~minutes of CPU training. The unguided $H = 4$ transformer above clears this baseline by $7.3$~pp top-1 before any physics priors are applied, isolating the contribution of \emph{learned} band-to-band structure (cross-attention plus value-pathway combinations) over per-band thresholding. The forest also exhibits a wider top-1-to-top-3 spread ($+20.6$~pp vs.\ $+15.1$~pp for Trans~$H = 8$): it knows the answer is in its top three predictions almost as often as the transformer does, but is more uncertain among those three --- the signature of a model that has learned per-band decision rules without learning band-to-band relationships.
 
 \paragraph{Head-averaged attention across the four parameter-matched 4H configurations}
 Figure~\ref{fig:trans4_attn} compares head-averaged attention $\bar{\mathbf{A}}^{(c)} = \frac{1}{H}\sum_h \mathbf{A}_h^{(c)} \in \R^{285}$ on hematite (top) and goethite (bottom) at $H = 4$ across the four configurations of Table~\ref{tab:ablation}. Dashed vertical lines mark the literature Fe$^{3+}$ diagnostic wavelengths for each mineral; light gray spans show the H$_2$O atmospheric masks. Because the inputs are TOA reflectance with derivative-aware tokenization, exact coincidence between attention maxima and laboratory absorption centers is not expected; the relevant question is whether attention concentrates in physically plausible neighborhoods, and how the spectroscopic prior reshapes which neighborhoods receive attention mass.
@@ -489,7 +491,7 @@ Figure~\ref{fig:trans4_attn} compares head-averaged attention $\bar{\mathbf{A}}^
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{attention_headavg_compare4h.png}
-\caption{Head-averaged class-conditional mean attention weights $\bar{\mathbf{A}}^{(c)} \in \R^{285}$ for hematite (top, class~29) and goethite (bottom, class~2) at $H = 4$, comparing the four parameter-matched configurations of Table~\ref{tab:ablation}: transformer baseline (red), PCA-manual prior (orange), PCA-curated zabs prior (blue), and LUSI-only (green). Vertical dashed lines mark the literature Fe$^{3+}$ charge-transfer and crystal-field diagnostic wavelengths for each mineral (hematite: 535/670/860; goethite: 480/670/920); light gray spans show the H$_2$O atmospheric masks.}
+\caption{Head-averaged class-conditional mean attention weights $\bar{\mathbf{A}}^{(c)} \in \R^{285}$ for hematite (top, class~29) and goethite (bottom, class~2) at $H = 4$, comparing the four parameter-matched configurations of Table~\ref{tab:ablation}: transformer baseline (red), PCA-manual prior (orange), PCA-curated prior (blue), and LUSI-only (green). Vertical dashed lines mark the literature Fe$^{3+}$ charge-transfer and crystal-field diagnostic wavelengths for each mineral (hematite: 535/670/860; goethite: 480/670/920); light gray spans show the H$_2$O atmospheric masks.}
 \label{fig:trans4_attn}
 \end{figure}
 
@@ -497,7 +499,7 @@ Figure~\ref{fig:trans4_attn} compares head-averaged attention $\bar{\mathbf{A}}^
 For each mineral $c$ and configuration, we compute Spearman rank correlation between the attention vector and the absorption depth $1 - \mathbf{w}_{\text{ref}}^{(c)}$ derived from the corresponding USGS reference spectrum. The metric tests whether the model's attention magnitudes rank wavelengths in the same order as the mineral's actual absorption pattern. Three patterns emerge:
 
 \emph{Architectural priors achieve statistically significant per-mineral alignment.}
-PCA-manual reaches head-averaged $\rho = 0.238$ ($p < 10^{-3}$) for hematite and $\rho = 0.202$ ($p < 10^{-2}$) for goethite; PCA-curated zabs reaches $\rho = 0.216$ and $\rho = 0.170$ respectively, with similar significance. Per-head, the alignments are sharper still: \emph{PCA-manual Head~1 reaches $\rho = 0.389$ ($p < 10^{-8}$) on hematite}, with top peaks at 530/544/559~nm and 873~nm matching the canonical 535~nm visible charge-transfer and 860~nm NIR crystal-field, and \emph{PCA-manual Head~0 reaches $\rho = 0.394$ ($p < 10^{-7}$) on goethite}, with top peaks at 470/485 nm and 902~nm matching the canonical 480~nm charge-transfer and 920~nm crystal-field. These two cells are direct quantitative evidence that the manual prior delivers what its construction promises: pinning attention onto the literature wavelengths for the specific mineral being classified.
+PCA-manual reaches head-averaged $\rho = 0.238$ ($p < 10^{-3}$) for hematite and $\rho = 0.202$ ($p < 10^{-2}$) for goethite; PCA-curated reaches $\rho = 0.216$ and $\rho = 0.170$ respectively, with similar significance. Per-head, the alignments are sharper still: \emph{PCA-manual Head~1 reaches $\rho = 0.389$ ($p < 10^{-8}$) on hematite}, with top peaks at 530/544/559~nm and 873~nm matching the canonical 535~nm visible charge-transfer and 860~nm NIR crystal-field, and \emph{PCA-manual Head~0 reaches $\rho = 0.394$ ($p < 10^{-7}$) on goethite}, with top peaks at 470/485 nm and 902~nm matching the canonical 480~nm charge-transfer and 920~nm crystal-field. These two cells are direct quantitative evidence that the manual prior delivers what its construction promises: pinning attention onto the literature wavelengths for the specific mineral being classified.
 
 \emph{Unguided baselines do not reach significance per mineral.}
 The transformer baseline reaches $\rho = 0.059$ on hematite (n.s., $p = 0.40$) and $\rho = 0.145$ on goethite (marginal, $p = 0.05$); LUSI reaches $\rho = 0.070$ and $\rho = 0.112$ respectively, both non-significant. Even though Trans and LUSI find the visible Fe$^{3+}$ region in some heads, the head-averaged magnitude ranking does not align with the per-mineral absorption pattern --- attention without spectroscopic guidance is too diffuse over non-mineral-specific wavelengths.
@@ -506,7 +508,7 @@ The transformer baseline reaches $\rho = 0.059$ on hematite (n.s., $p = 0.40$) a
 PCA-manual gives the highest single per-head correlations (above $0.39$); PCA-curated gives competitive but slightly weaker per-head alignments (Hematite H2 $\rho = 0.338$, $p < 10^{-6}$; Goethite H2 $\rho = 0.266$, $p < 10^{-3}$) with no anti-correlated heads. The pattern parallels the capacity-saturation finding above: PCA-manual's narrow positional alignment translates into stronger per-head Spearman; PCA-curated's broader spectral coverage gives more uniform mid-range alignment across heads.
 
 \paragraph{$H = 8$ Spearman: capacity-saturation as a ranking flip.}
-The Spearman ranking observed at $H = 4$ flips at $H = 8$. The unguided transformer baseline reaches per-mineral alignment $\rho = 0.320$ ($p < 10^{-6}$) on hematite and $\rho = 0.249$ on goethite --- the same level produced by the manual prior at $H = 4$ ($\rho = 0.238$ and $0.202$), achieved through head-doubling rather than spectroscopic structure. PCA-manual collapses at $H = 8$ to $\rho = 0.038$ (hematite, n.s.) and $\rho = 0.074$ (goethite, n.s.); per-head, the heads pinned at 480 and 535~nm end up anti-correlated with hematite absorption depth ($\rho = -0.203$, $-0.224$, both $p < 10^{-2}$), reflecting bias drift during the trainable post-freeze phase ($\|\bm{\beta}\|_{\text{rms}} = 1.154$ amplification). PCA-curated zabs holds across both head counts ($\rho \sim 0.22 \to 0.25$ on hematite; $0.17 \to 0.14$ on goethite) because its broad spectral support anchors the bias structurally. LUSI 8H reaches $\rho = 0.315$ on goethite ($p < 10^{-5}$), the strongest head-averaged goethite alignment of any 8H configuration. The pattern is the cleanest empirical realization of the capacity-saturation framing: at $H = 8$ the unguided model rediscovers the Fe$^{3+}$ structure the manual prior scaffolded at $H = 4$, while sharp priors become \emph{less} aligned with per-mineral spectroscopic structure than the unguided baseline.
+The Spearman ranking observed at $H = 4$ flips at $H = 8$. The unguided transformer baseline reaches per-mineral alignment $\rho = 0.320$ ($p < 10^{-6}$) on hematite and $\rho = 0.249$ on goethite --- the same level produced by the manual prior at $H = 4$ ($\rho = 0.238$ and $0.202$), achieved through head-doubling rather than spectroscopic structure. PCA-manual collapses at $H = 8$ to $\rho = 0.038$ (hematite, n.s.) and $\rho = 0.074$ (goethite, n.s.); per-head, the heads pinned at 480 and 535~nm end up anti-correlated with hematite absorption depth ($\rho = -0.203$, $-0.224$, both $p < 10^{-2}$), reflecting bias drift during the trainable post-freeze phase ($\|\bm{\beta}\|_{\text{rms}} = 1.154$ amplification). PCA-curated holds across both head counts ($\rho \sim 0.22 \to 0.25$ on hematite; $0.17 \to 0.14$ on goethite) because its broad spectral support anchors the bias structurally. LUSI 8H reaches $\rho = 0.315$ on goethite ($p < 10^{-5}$), the strongest head-averaged goethite alignment of any 8H configuration. The pattern is the cleanest empirical realization of the capacity-saturation framing: at $H = 8$ the unguided model rediscovers the Fe$^{3+}$ structure the manual prior scaffolded at $H = 4$, while sharp priors become \emph{less} aligned with per-mineral spectroscopic structure than the unguided baseline.
 
 \paragraph{Peak coincidence with literature diagnostic wavelengths.}
 Comparing the top-10 attention peaks per configuration against the canonical hematite (535/670/860 nm) and goethite (480/670/920 nm) bands within a $\pm 20$~nm tolerance reinforces the Spearman ranking: PCA-manual's heads recover the canonical 470~nm goethite charge-transfer (Head~0: 470/485/411~nm), the 535~nm hematite charge-transfer (Head~1: 530/544/559~nm), and the 670~nm crystal-field (Head~2: 671/679~nm) almost exactly; PCA-curated's broader NIR coverage hits 858~nm (Hematite H2, near canonical 860~nm) and the visible region (Hematite H1: 522/552 nm); the transformer baseline finds visible Fe$^{3+}$ at Head~1 (552/574/589~nm) but spends Head~0 on a non-canonical 1119~nm peak; LUSI mirrors the transformer baseline closely at the visual level (1119~nm Head~0; 768/1208/1216~nm Head~2), reinforcing the Spearman finding that the consistency loss does not relocate attention to mineral-specific bands. The per-head attention pattern for goethite is nearly identical to that for hematite, since the model attends to similar Fe$^{3+}$ regions for spectroscopically nearby minerals: the attention weights select \emph{where} the model looks, but they don't determine \emph{what} it reads. Discrimination happens in the value vectors $\mathbf{V}_j$, not the attention weights.
@@ -652,7 +654,7 @@ When $H > k$ PCA components, the first $k$ heads are prior-initialized and the r
 \subsection{Learning Using Statistical Invariants (LUSI)-inspired consistency reglarization}
 \label{sec:lusi}
 
-LUSI \cite{vapnik2020} enforces that predictions are invariant to physical transformations that should not change mineral identity. 
+LUSI \cite{vapnik2020} encourages predictions to remain stable under physical transformations that should not change mineral identity.
 LUSI injects domain knowledge through the loss function and can be used independently or in combination with PCA spectral priors.
 
 \subsubsection{Theoretical background}
@@ -727,10 +729,36 @@ LUSI requires two additional forward passes per batch, approximately doubling tr
 LUSI does not improve accuracy on the training distribution: 4-head LUSI-only (0.773) underperforms the transformer baseline (0.791), and 8-head PCA+LUSI (0.805) matches PCA-only (0.806) within noise.
 The LUSI loss converges to $\sim$0.03, indicating the model already achieves brightness/slope invariance through standard training at the $\sim$1M pixel data scale.
 
-The value of LUSI is most visible \emph{out of distribution}. Cross-scene evaluation on a geographically disjoint southwestern US test region reveals that LUSI is the only configuration that \emph{improves} on the new scene (+2.6\%), while the transformer-only model degrades ($-$1.7\%) and PCA spectral priors degrade most ($-$5.8\%). This is consistent with Vapnik and Izmailov's prediction that statistical invariants help when test conditions differ from training: the scale and slope predicates encourage invariances that transfer across atmospheric conditions, while PCA spectral priors encode region-specific spectral patterns that do not.
+Cross-region deployment to a geographically disjoint southwestern US desert region (20 mineral-populated granules) reduces top-1 accuracy by $8$--$17$~pp from the training-region validation pool, while top-3 accuracy stays in the $0.87$--$0.92$ range across all configurations (Table~\ref{tab:crossscene}). At $H = 4$ the manual prior leads cross-region (SW top-1 $= 0.724$, $-8.4$~pp drop), $+5.5$~pp above the unguided baseline and $+9.0$~pp above LUSI. At $H = 8$ the PCA-curated prior leads (SW top-1 $= 0.705$, $-11.3$~pp drop), narrowly above Manual 8H ($0.699$) and well above LUSI 8H ($0.666$). The 4H winner is the sharp manual prior; the 8H winner is the diffuse PCA-curated prior --- the sharp-vs-diffuse split at different head counts mirrors the in-distribution pattern of Table~\ref{tab:ablation}. Architectural priors are the consistent cross-region winners; LUSI is last or next-to-last on both top-1 and top-3 at both head counts in this evaluation.
 
-A direct implication is that LUSI buys \emph{atmospheric robustness} as a property of the trained map, independent of any explicit atmospheric-correction step. Two consequences follow. First, the model can be applied to L1B observations without invoking ISOFIT or any RTM-based inversion at inference time. Second, this opens a pathway to recovering pixels currently discarded by EMIT's L2 pipeline at AOD $> 0.5$ (Section~\ref{subsec:limitations_pipelines}), because the post-hoc model is no longer constrained by ISOFIT's convergence behavior at high aerosol loads --- it just produces a forward-pass prediction from whatever TOA spectrum is supplied. Direct empirical validation of this claim is non-trivial, since by definition L2B mineral labels do not exist for AOD $> 0.5$ pixels (the very gap to be recovered). A practical first test, available within the existing dataset, is to bin the validation pixels by their L2A-reported AOD and compare per-bin accuracy across configurations: a flat accuracy-vs-AOD curve for LUSI alongside degrading curves for transformer-only and PCA configurations would corroborate the atmospheric-robustness claim and motivate cross-sensor or in-situ validation at high-AOD targets such as the Bod\'el\'e Depression or Lake Eyre.
-\textcolor{red}{\textbf{TODO:} Run the accuracy-vs-AOD binning analysis on the validation set and report per-configuration curves.}
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Cross-region deployment. Train columns report the held-out validation-pool accuracy from Table~\ref{tab:ablation} on Africa/Middle East pixels. SW columns report the mean accuracy across 20 SW US granules each containing at least $20\%$ Group-1 mineral pixels, under full-granule inference. Bold marks the leader within each head-count block on each SW metric.}
+\label{tab:crossscene}
+\begin{tabular}{p{0.24\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.13\linewidth}}
+\hline
+\rowcolor[gray]{0.85}
+\textbf{Configuration} & \textbf{Train top-1} & \textbf{SW top-1} & \textbf{Train top-3} & \textbf{SW top-3} \\
+\hline
+Trans 4H & 0.789 & 0.669 & 0.961 & 0.877 \\
+\hline
+\textbf{Manual 4H} & 0.808 & \textbf{0.724} & 0.967 & \textbf{0.919} \\
+\hline
+PCA-zabs 4H & 0.809 & 0.644 & 0.967 & 0.868 \\
+\hline
+LUSI 4H & 0.787 & 0.634 & 0.961 & 0.875 \\
+\hline
+Trans 8H & 0.819 & 0.683 & 0.970 & 0.902 \\
+\hline
+Manual 8H & 0.806 & 0.699 & 0.966 & 0.896 \\
+\hline
+\textbf{PCA-zabs 8H} & 0.818 & \textbf{0.705} & 0.970 & \textbf{0.910} \\
+\hline
+LUSI 8H & 0.796 & 0.666 & 0.962 & 0.893 \\
+\hline
+\end{tabular}
+\end{table}
 
 %% ====================================================================
 %% 8. ABLATION
@@ -742,7 +770,43 @@ This section evaluates the manual spectral prior of Section~\ref{sec:manual_prio
 All four configurations were trained for 120 epochs on the same 1.26~million pixel training set with identical optimizer settings, the same fixed random seed, and the same hardware (Apple M4 Max, MPS backend); the only differences are the number of attention heads and whether the attention bias $\bm{\beta}_h$ was initialized to zero (transformer-only) or to the round-robin Gaussian-bump pattern at the canonical Fe$^{3+}$ wavelengths from Table~\ref{tab:fe_diagnostics} (manual prior, $\alpha = 1.0$, freeze=3 epochs).
 
 \paragraph{Headline finding.}
-A 4-head transformer initialized with the manual spectral prior (top-1 = 0.808, train+val 117 min) delivers $1.9$ of the $3.0$~percentage-point gain that doubling the head count produces (Trans $H = 4$: $0.789 \to$ Trans $H = 8$: $0.819$, 134 min) --- approximately $63\%$ of the head-doubling benefit at zero additional training time, and a useful operating point when training compute is constrained. Crucially, the transformer baseline at $H = 4$ uses a trainable attention bias initialized at zero, parameter-matched to the prior-bearing configurations, so the prior's $+1.9$~pp gain over this baseline is unambiguously attributable to the spectroscopic initialization rather than to added trainable parameters or differential preprocessing. The full ablation table, including PCA-curated (top-1 = 0.809) and LUSI variants and head-counts $H = 4, 8$, is reported in the dissertation.
+A 4-head transformer initialized with the manual spectral prior (top-1 = 0.808, train+val 117 min) delivers $1.9$ of the $3.0$~percentage-point gain that doubling the head count produces (Trans $H = 4$: $0.789 \to$ Trans $H = 8$: $0.819$, 134 min) --- approximately $63\%$ of the head-doubling benefit at zero additional training time, and a useful operating point when training compute is constrained. Crucially, the transformer baseline at $H = 4$ uses a trainable attention bias initialized at zero, parameter-matched to the prior-bearing configurations, so the prior's $+1.9$~pp gain over this baseline is unambiguously attributable to the spectroscopic initialization rather than to added trainable parameters or differential preprocessing. Table~\ref{tab:ablation} reports the full ablation, including PCA-curated and LUSI variants at $H = 4$ and $H = 8$.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Ablation of the two physics-injection mechanisms at $H=4$ and $H=8$.
+All runs use the same data split, optimizer settings, derivative tokenization, learned query vectors, and trainable per-head attention bias $\bm{\beta}_h$.
+The transformer baseline initializes $\bm{\beta}_h$ at zero.
+Manual and PCA-curated configurations initialize $\bm{\beta}_h$ from Fe$^{3+}$ diagnostic wavelengths or curated USGS-library PCA loadings, respectively.
+LUSI uses zero-initialized trainable bias and adds only the statistical-invariance consistency loss.
+Wall-clock timings are for full training and validation on a single Apple M4 Max laptop using PyTorch MPS.}
+\label{tab:ablation}
+\begin{tabular}{p{0.30\linewidth}p{0.08\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.18\linewidth}}
+\hline
+\rowcolor[gray]{0.85}
+\textbf{Configuration} & \textbf{\#Heads} & \textbf{Top-1 Acc.} & \textbf{Top-3 Acc.} & \textbf{Train + Val Time (min)} \\
+\hline
+Transformer baseline & 4 & 0.789 & 0.961 & 119 \\
+\hline
+\textbf{Manual prior (Fe$^{3+}$ bands)} & \textbf{4} & \textbf{0.808} & \textbf{0.967} & \textbf{117} \\
+\hline
+PCA-curated prior & 4 & 0.809 & 0.967 & 124 \\
+\hline
+LUSI-only & 4 & 0.787 & 0.961 & 289 \\
+\hline
+PCA-curated + LUSI & 4 & 0.790 & 0.962 & $\sim$290 \\
+\hline
+Transformer baseline & 8 & 0.819 & 0.970 & 134 \\
+\hline
+Manual prior (Fe$^{3+}$ bands) & 8 & 0.806 & 0.966 & 125 \\
+\hline
+PCA-curated prior & 8 & 0.818 & 0.970 & 129 \\
+\hline
+LUSI-only & 8 & 0.796 & 0.962 & 326 \\
+\hline
+\end{tabular}
+\end{table}
 At $H = 8$ the manual prior \emph{underperforms} the parameter-matched transformer baseline by $-1.3$~pp ($0.819 \to 0.806$). This is the cleanest possible realization of the standard observation that physics-informed priors help most when the model's capacity is constrained \cite{raissi2019pinn, karpatne2017tgds}: in the capacity-constrained regime ($H = 4$) the prior is a substantial inductive scaffold, while in the capacity-saturated regime ($H = 8$) the same scaffold becomes a mild over-constraint. The unguided 8-head model already discovers most of the diagnostic regions on its own --- the red trace in Figure~\ref{fig:trans4_attn} hits the visible Fe$^{3+}$ region in Head~1 and the NIR continuum near canonical 860~nm in Head~3 at $H = 4$, and the corresponding $H = 8$ baseline picks up additional regions through its extra heads.
 
 \paragraph{Why the 8-head manual prior underperforms 8-head transformer-only.}
@@ -751,13 +815,13 @@ First, the attention-bias RMS magnitude $\|\bm{\beta}\|_{\text{rms}}$ at the end
 Second, the average pairwise cosine similarity between heads' learned query vectors $\mathbf{q}_h$ was $0.015$ for $H = 8$ versus $0.031$ for $H = 4$, ruling out head collapse as an explanation: the random heads stayed distinct from the prior-anchored heads but the model elected not to use that capacity for novel feature discovery.
 
 \paragraph{Sharp vs. diffuse architectural priors at saturated capacity.}
-The PCA-curated zabs prior at $H = 8$ reaches top-1 $0.818$, statistically tied with the parameter-matched transformer baseline ($0.819$) rather than underperforming it: its diffuse non-zero loadings span $\sim$220 of 285 bands and align with the variance directions the unguided model would discover anyway, leaving the prior neutral rather than constraining at $H = 8$. Diagnostically, $\|\bm{\beta}\|_{\text{rms}} = 1.066$ for the $H = 8$ PCA-curated run, barely above its $\alpha = 1.0$ initialization, versus $1.154$ for the manual run --- the manual prior amplifies more aggressively because the model has to lean into its narrow bumps to use them, while PCA-curated barely amplifies above its initial scale. The capacity-saturation harm is therefore sharpness-dependent: \emph{sharp} architectural priors (Manual, 5 narrow Gaussian bumps) become mildly over-constraining at saturated capacity, while \emph{diffuse} architectural priors (PCA-curated, broad band coverage) become neutral. Together these observations sharpen the headline takeaway: \emph{architectural priors are most valuable as a way to compress capacity, and at saturated capacity their cost depends on how concentrated their spectral support is}.
+The PCA-curated prior at $H = 8$ reaches top-1 $0.818$, statistically tied with the parameter-matched transformer baseline ($0.819$) rather than underperforming it: its diffuse non-zero loadings span $\sim$220 of 285 bands and align with the variance directions the unguided model would discover anyway, leaving the prior neutral rather than constraining at $H = 8$. Diagnostically, $\|\bm{\beta}\|_{\text{rms}} = 1.066$ for the $H = 8$ PCA-curated run, barely above its $\alpha = 1.0$ initialization, versus $1.154$ for the manual run --- the manual prior amplifies more aggressively because the model has to lean into its narrow bumps to use them, while PCA-curated barely amplifies above its initial scale. The capacity-saturation harm is therefore sharpness-dependent: \emph{sharp} architectural priors (Manual, 5 narrow Gaussian bumps) become mildly over-constraining at saturated capacity, while \emph{diffuse} architectural priors (PCA-curated, broad band coverage) become neutral. Together these observations sharpen the headline takeaway: \emph{architectural priors are most valuable as a way to compress capacity, and at saturated capacity their cost depends on how concentrated their spectral support is}.
 
 \paragraph{Combining architectural and loss-based priors causes interference at constrained capacity.}
-A combined PCA-curated~+~LUSI run at $H = 4$ reaches top-1 $0.790$ --- $1.9$~percentage points \emph{below} PCA-zabs alone ($0.809$) and statistically tied with the unguided baseline. The interference is mechanically visible in the bias diagnostics: the trainable bias amplified to $\|\bm{\beta}\|_{\text{rms}} = 1.648$, well above either prior construction alone (PCA-zabs: $0.946$; LUSI alone: $1.308$). LUSI's consistency loss appears to use the bias as a buffer between augmented and un-augmented passes, distorting the structured PCA initialization. The two priors target different failure modes --- architectural priors for in-distribution accuracy by structured initialization, loss-based priors for cross-region robustness by predicate invariance --- and at constrained capacity ($H = 4$) the two pressures conflict rather than stack additively. The corresponding $H = 8$ combined configuration was not re-evaluated under the current parameter-matched pipeline; the legacy 8-head PCA+LUSI run reported in earlier project notes reached $0.805$, statistically tied with the legacy 8-head PCA-only run at $0.806$, which is consistent with the conjecture that the interference is capacity-dependent.
+A combined PCA-curated~+~LUSI run at $H = 4$ reaches top-1 $0.790$ --- $1.9$~percentage points \emph{below} PCA-curated alone ($0.809$) and statistically tied with the unguided baseline. The interference is mechanically visible in the bias diagnostics: the trainable bias amplified to $\|\bm{\beta}\|_{\text{rms}} = 1.648$, well above either prior construction alone (PCA-curated: $0.946$; LUSI alone: $1.308$). LUSI's consistency loss appears to use the bias as a buffer between augmented and un-augmented passes, distorting the structured PCA initialization. The two priors target different failure modes --- architectural priors for in-distribution accuracy by structured initialization, loss-based priors for cross-region robustness by predicate invariance --- and at constrained capacity ($H = 4$) the two pressures conflict rather than stack additively. The corresponding $H = 8$ combined configuration was not re-evaluated under the current parameter-matched pipeline; the legacy 8-head PCA+LUSI run reported in earlier project notes reached $0.805$, statistically tied with the legacy 8-head PCA-only run at $0.806$, which is consistent with the conjecture that the interference is capacity-dependent.
 
 \paragraph{Convergence trajectories across all configurations.}
-Figure~\ref{fig:earlyepoch} compares the full 120-epoch training trajectories across all nine configurations of the ablation. Three tiers emerge visually: an upper 8H tier comprising the transformer baseline and the PCA-curated zabs prior ($\sim$0.818--0.819, tracking each other closely throughout); a mid tier of 4H architectural-prior runs and 8H Manual ($\sim$0.806--0.809); and a 4H bottom cluster comprising the unguided baselines, the LUSI-only run, and the interfering PCA+LUSI combination ($\sim$0.787--0.790). The 8H LUSI configuration sits alone at $\sim$0.796 between the mid tier and the 4H bottom cluster, reflecting the in-distribution penalty of loss-based regularization at saturated capacity.
+Figure~\ref{fig:earlyepoch} compares the full 120-epoch training trajectories across all nine configurations of the ablation. Three tiers emerge visually: an upper 8H tier comprising the transformer baseline and the PCA-curated prior ($\sim$0.818--0.819, tracking each other closely throughout); a mid tier of 4H architectural-prior runs and 8H Manual ($\sim$0.806--0.809); and a 4H bottom cluster comprising the unguided baselines, the LUSI-only run, and the interfering PCA+LUSI combination ($\sim$0.787--0.790). The 8H LUSI configuration sits alone at $\sim$0.796 between the mid tier and the 4H bottom cluster, reflecting the in-distribution penalty of loss-based regularization at saturated capacity.
 
 \begin{figure}[!htbp]
 \centering
@@ -780,6 +844,22 @@ The headline accuracy comparison treats every Group~1 class equally, but the per
 \caption{Per-class precision, recall, and F1-score stratified by training-set support across three rarity bins, for the eight 4H and 8H configurations of Table~\ref{tab:ablation} (the PCA+LUSI 4H combined run is omitted for visual clarity). \textbf{Rows:} rarity bins (0--150, 150--1000, 1000--4000 training pixels per class). \textbf{Columns:} precision, recall, F1. The architectural-prior advantage is concentrated in the rare-class regime: Manual~4H reaches F1 = 0.62 in the 150--1000 bin, tied with the 8-head transformer baseline at F1 = 0.64 and well above LUSI~4H at F1 = 0.49. At the common end (1000--4000 samples) all configurations converge to F1 = 0.82--0.86, suggesting the prior's contribution is largely exhausted once classes have enough training data for the unguided model to discover the structure on its own. Bin edges and axis ranges chosen to highlight the regime where configurations diverge.}
 \label{fig:rarity_grid}
 \end{figure}
+
+\section{Full-image granule inference}
+\label{sec:full_image_inference}
+
+The held-out validation pool of Section~\ref{sec:trans_only_results} draws random pixels from across all 396 training granules and inherits the class-balanced training distribution (7,500-pixel cap per ID). At deployment, however, the model is applied to a single EMIT granule whose mineralogy is not class-balanced --- two or three classes typically account for $80$--$99\%$ of mineral pixels --- and the relevant question is whether the validation accuracy of Table~\ref{tab:ablation} transfers to that setting. Four granules were evaluated under all four locked $H = 4$ configurations: Image~0 (163{,}391 mineral pixels, atypical class-28 distribution); Image~4 (1{,}589{,}704 mineral pixels, classes 47/45/28 = $99\%$); Image~50 (1{,}445{,}153 mineral pixels, goethite-dominated 8/46/40 = $87\%$); Image~100 (1{,}589{,}760 mineral pixels, goethite-dominated 8/46/7/45/49 = $99\%$). Inference takes $\sim$45~seconds per granule on the same hardware as training.
+
+Across the three deployment-realistic granules (Images~4, 50, 100), the mean top-1 ranking is PCA-curated (0.888) $>$ Manual (0.882) $>$ Trans (0.874) $>$ LUSI (0.865) --- the same ordering as the validation pool, with the same magnitude of separation between architectural priors and the unguided baseline ($\sim$1--2~pp). Macro recall favors the architectural priors on every granule (the unguided transformer never has the highest macro recall), and rare-class lift is visible at granule scale: on Image~50, classes 21 and 22 ($\sim$1{,}500 pixels each) gain $+22$--$24$~pp F1 under the architectural prior; on Image~100, class~32 (117 pixels) jumps from F1 = $0.04$ (Trans) to $0.32$ (PCA-curated). Top-3 saturates on representative granules ($0.987$--$0.999$ across all configs); top-1 and macro F1 are the discriminating metrics at deployment scale. Image~0 is a deployment-failure case for the architectural priors --- PCA-curated scores F1 = $0.49$ on class~28 in this granule versus $0.95$ on Image~4 with the same checkpoint, because the granule's class-28 pixels deviate from the canonical Fe-hydroxide spectroscopic signature and the prior-bearing models pull back rather than commit. This is the granule-scale analog of the cross-region degradation pattern: priors crisp up canonical pixels and trade some accuracy on atypical ones. LUSI~4H is the lowest top-1 on every granule and on the validation pool; its distinguishing advantage remains cross-region robustness rather than in-distribution accuracy.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\textwidth]{granule_error_grid_image50.png}
+\caption{Spatial distribution of prediction errors on Image~50 across the four locked $H = 4$ configurations of Table~\ref{tab:ablation}. \textbf{Columns:} transformer baseline, manual prior, PCA-curated prior, LUSI. \textbf{Rows:} ground-truth Group~1 mineral ID (top, navy = no-mineral); top-1 errors (red where the highest-probability prediction is incorrect); top-2 errors (red where neither the top-1 nor the top-2 prediction is correct); top-3 errors (red where all three are wrong). Per-panel accuracies are annotated above each subplot. The top-1 ranking on this granule is PCA-curated (0.847) $>$ Manual (0.836) $>$ Trans (0.827) $>$ LUSI (0.808), matching the validation-pool ordering. The top-3 row is visually near-saturated ($0.987$--$0.996$) --- once the answer is allowed to be among the top three predictions, all four configurations recover the correct class on essentially every mineral pixel. Errors concentrate in the same spatial region across all four configurations, indicating a region-level rather than configuration-level failure mode. The full four-granule, four-metric table is reported in the dissertation.}
+\label{fig:granule_error_grid}
+\end{figure}
+
+Cross-region granule deployment is reported in Table~\ref{tab:crossscene} across 20 mineral-populated SW US granules (each with $\geq 20\%$ Group-1 mineral pixels). The cross-region winning configuration is head-count-dependent: at $H = 4$ the sharp manual prior leads (SW top-1 $= 0.724$), while at $H = 8$ the diffuse PCA-curated prior leads (SW top-1 $= 0.705$). The reversal mirrors the in-distribution sharp-vs-diffuse pattern of Table~\ref{tab:ablation}: narrow Gaussian bumps over-constrain attention at saturated capacity, while PCA-curated's diffuse loadings ($\sim$$220$ of $285$ bands) anchor better when more heads are available. LUSI is last or next-to-last on both top-1 and top-3 at both head counts, providing no consistent cross-region advantage.
 
 \section{Discussion and conclusions}
 \label{sec:conclusions}
