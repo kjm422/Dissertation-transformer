@@ -38,14 +38,15 @@
 \address[usc]{Department of Civil and Environmental Engineering, Viterbi School of Engineering, University of Southern California, Los Angeles, CA 90089, USA}
 
 \begin{abstract}
-Hyperspectral mineral classification from orbital imaging spectrometers traditionally requires computationally expensive radiative transfer model (RTM) inversion to correct for atmospheric effects before surface mineralogy can be identified. 
-This paper presents a cross-attention transformer architecture that classifies minerals directly from EMIT L1B top-of-atmosphere (TOA) reflectance, bypassing atmospheric correction entirely after training on a small set of SDS-processed data. 
+Hyperspectral mineral classification from orbital imaging spectrometers traditionally requires a two-stage operational pipeline: iterative radiative transfer model (RTM) inversion to correct for atmospheric effects, followed by per-pixel spectral-library matching against laboratory reference spectra.
+This paper presents a cross-attention transformer architecture that serves as a low-latency surrogate for this pipeline, mapping EMIT L1B top-of-atmosphere (TOA) reflectance directly to mineral class in a single forward pass after training on a small set of SDS-processed data.
 The architecture employs asymmetric cross-attention with learned query vectors, achieving complexity linear in the number of spectral bands, and produces per-band, per-head attention weights that are interpretable as spectroscopic importance scores. 
 Shape-aware tokenization encodes local absorption feature morphology through spectral derivatives before global context is evaluated via attention. 
 The model operates on 285 EMIT bands to classify 95 Group~1 mineral classes with a compact parameter budget. 
 Physics-informed enhancements, including an attention bias derived from USGS reference spectra and a LUSI-inspired consistency loss applied to label-preserving illumination and spectral-slope perturbations, inject domain knowledge without altering the transformer architecture.
 The best configuration achieves 82.1\% top-1 and 96.8\% top-3 accuracy on held-out pixels, with per-head attention analysis showing that the model emphasizes spectroscopically valid diagnostic bands; attention weights are interpreted as diagnostic rather than causal explanations.
-Cross-scene evaluation on a geographically disjoint southwestern US test region shows that LUSI regularization improves pixel-scale generalization on the new scene, although granule-scale evaluation reveals a robustness-vs-accuracy tradeoff rather than uniform improvement.
+Cross-region and full-granule experiments reveal a tradeoff: spectral priors improve top-1 accuracy, interpretability, and rare-class behavior (especially at constrained capacity), whereas statistical-invariance regularization's effect is concentrated in rare-class sensitivity rather than uniformly improving top-1 accuracy.
+Together, these results position physics-informed cross-attention as an efficient, interpretable surrogate for hyperspectral mineral retrieval that can support faster ground processing, onboard screening, and revisit decision support for space-based applications.
 \end{abstract}
 
 \begin{keyword}
@@ -152,7 +153,7 @@ This paper makes the following contributions toward filling that gap:
   \item \textbf{Post-hoc direct retrieval for mineral classification (RTM bypass):} A cross-attention transformer that maps L1B TOA reflectance to a probabilistic distribution over 95 mineral classes (softmax; top-1 and top-3 reported) in a single forward pass, with $O(H \times L)$ complexity linear in the number of spectral bands. Unlike RTM-trained direct retrievals (e.g., \cite{Keely2025ConditionalDiffusionCO2,Li2022NO2NN}), the model is trained on operational L1B/L2B pairs from the EMIT Science Data System and requires no radiative transfer model in either training or inference --- hence the ``RTM bypass'' shorthand used throughout. The compact model ($<$457K parameters) enables millisecond-scale inference, opening pathways to real-time detection of transient phenomena, autonomous revisit prioritization, and onboard processing for bandwidth-constrained missions.
   \item \textbf{Spectroscopic interpretability:} Per-band, per-head attention weights ($\mathbf{A}_h$) validated against known diagnostic absorption features within $\pm$20~nm of literature values, providing physically explainable classification decisions.
   \item \textbf{Physics-informed spectral priors:} An attention bias $\bm{\beta}_h$ based on USGS reference spectra that injects domain knowledge without altering the architecture. This steers attention toward spectrally diagnostic bands while allowing the model to learn from data, and it provides a testbed for evaluating the impact of different priors on performance and interpretability.
-  \item \textbf{Statistical-invariance regularization for atmospheric robustness:} A LUSI-inspired consistency loss that penalizes prediction changes under physically motivated, label-preserving perturbations of the input spectrum (broadband brightness scaling and conservative spectral-slope tilts). The empirical consequence is improved cross-region generalization at pixel scale.
+  \item \textbf{Statistical-invariance regularization for atmospheric robustness:} A LUSI-inspired consistency loss that penalizes prediction changes under physically motivated, label-preserving perturbations of the input spectrum (broadband brightness scaling and conservative spectral-slope changes). The empirical consequence is improved cross-region generalization at pixel scale.
   \item \textbf{Sensor-agnostic design:} The new approach is not tied to a specific instrument or application domain.
   Cross-scene generalization across geographic regions (Africa/Middle East to southwestern US) is demonstrated, and the architecture is directly applicable to other imaging spectrometer missions and spectral classification problems..
 \end{enumerate}
@@ -408,7 +409,7 @@ Per-band robust z-score normalization (per-band median and interquartile range, 
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=\textwidth]{architecture_diagram.pdf}
+\includegraphics[width=\textwidth]{architecture.pdf}
 \caption{End-to-end architecture overview. The forward pass is partitioned into four shaded regions that align with Sections~\ref{sec:preprocessing} (data preprocessing and normalization), \ref{sec:tokenization} (tokenization and embedding), \ref{sec:attn_pooling} (attention pooling), and~\ref{sec:classification} (classification head). 
 Optional physics-informed components (yellow boxes, dashed lines). the spectral-priors attention bias and the LUSI consistency branch, can be toggled independently.}
 \label{fig:architecture}
@@ -438,7 +439,7 @@ where the $\sqrt{d}$ scaling prevents softmax saturation and the temperature $\t
 \subsection{Classification head}
 \label{sec:classification}
 
-The pooled vector $\mathbf{z}_{\text{cat}}$ is mapped to per-class logits by a two-layer feed-forward network with ReLU activations and dropout $p = 0.1$, compressing the $Hd = 1{,}536$-dimensional multi-head representation to $d = 192$ before producing $Q_1 = 95$ class logits (Figure~\ref{fig:architecture}); the predicted mineral ID $\hat{q}_{1,i}$ is the argmax over those logits. The softmax distribution $\hat{\mathbf{p}}$ over $Q_1 = 95$ classes is a \emph{model} probability rather than a calibrated estimate of real-world class probabilities; we report top-1 and top-3 retrievals as relative measures and treat any frequentist interpretation as requiring separate calibration.
+The pooled vector $\mathbf{z}_{\text{cat}}$ is mapped to per-class logits by a two-layer feed-forward network with ReLU activations and dropout $p = 0.1$, compressing the $Hd = 1{,}536$-dimensional multi-head representation to $d = 192$ before producing $Q_1 = 95$ class logits (Figure~\ref{fig:architecture}); the predicted mineral ID $\hat{q}_{1}$ is the argmax over those logits. The softmax distribution $\hat{\mathbf{p}}$ over $Q_1 = 95$ classes is a \emph{model} probability rather than a calibrated estimate of real-world class probabilities; we report top-1 and top-3 retrievals as relative measures and treat any frequentist interpretation as requiring separate calibration.
 
 \subsection{Model parameter summary}
 
@@ -542,7 +543,7 @@ The frequency column (broadband vs.\ narrow-band) explains why LUSI invariance h
 \hline
 Topographic shadow / illumination geometry & Multiplicative scaling (constant across $\lambda$) & Broadband & LUSI scale predicate $T_{\text{scale}}$ \\
 \hline
-Aerosol / Rayleigh path radiance & Smooth additive ramp & Broadband & LUSI tilt predicate $T_{\text{tilt}}$ \\
+Aerosol / Rayleigh path radiance & Smooth additive ramp & Broadband & LUSI slope predicate $T_{\text{slope}}$ \\
 \hline
 Water vapor absorption & Sharp narrow-band dips at $\sim$1.4 and $\sim$1.9~$\mu$m & Narrow-band & Water vapor mask (Section~\ref{sec:wv_mask}) \\
 \hline
@@ -661,7 +662,7 @@ LUSI injects domain knowledge through the loss function and can be used independ
 
 Section~\ref{subsec:physics_informed_approaches} positions LUSI in the broader physics-informed-learning literature. To recap briefly: in Vapnik and Izmailov's original formulation~\cite{vapnik2020}, domain knowledge enters as \emph{predicates} and \emph{statistical invariants} that restrict the admissible function class --- hard constraints on what the learned function must satisfy. The neural training setting does not directly admit such hard constraints, so this work implements a transformation-based approximation: physically motivated transformations are applied to the input spectrum, and the model is penalized for changes in its prediction under those transformations. The penalty is realized as a teacher--student consistency objective borrowed from knowledge distillation~\cite{hinton2015distilling}: the model's prediction on the original (untransformed) spectrum acts as a fixed \emph{teacher} target with gradients stopped, while the prediction on the transformed spectrum is the \emph{student}, trained to match the teacher.
 
-The physical motivation for the transformations comes from the fact that TOA reflectance is a transformed version of surface reflectance, not an equivalent quantity. Under the first-order TOA decomposition (Equation~\ref{eq:toa_decomp}), changes in illumination, atmospheric transmittance ($T_{\downarrow} T_{\uparrow}$), and path reflectance ($\rho_{\mathrm{path}}$) can alter the observed TOA spectrum without changing the underlying mineral identity. The LUSI transformations approximate these effects directly in the TOA-observation domain: the scale transformation $T_{\text{scale}}$ (Equation~\ref{eq:scale_predicate}) represents broadband multiplicative changes in brightness, while the tilt transformation $T_{\text{tilt}}$ (Equation~\ref{eq:tilt_predicate}) represents a conservative low-frequency additive spectral-slope perturbation. These transformations are therefore not an atmospheric-correction model and do not assume $\rho_{\mathrm{toa}} \approx \rho_{\mathrm{surface}}$; rather, they define label-preserving directions in TOA reflectance space along which the predicted mineral label should remain stable.
+The physical motivation for the transformations comes from the fact that TOA reflectance is a transformed version of surface reflectance, not an equivalent quantity. Under the first-order TOA decomposition (Equation~\ref{eq:toa_decomp}), changes in illumination, atmospheric transmittance ($T_{\downarrow} T_{\uparrow}$), and path reflectance ($\rho_{\mathrm{path}}$) can alter the observed TOA spectrum without changing the underlying mineral identity. The LUSI transformations approximate these effects directly in the TOA-observation domain: the scale transformation $T_{\text{scale}}$ (Equation~\ref{eq:scale_predicate}) represents broadband multiplicative changes in brightness, while the slope-change transformation $T_{\text{slope}}$ (Equation~\ref{eq:slope_predicate}) represents a conservative low-frequency additive spectral-slope perturbation. These transformations are therefore not an atmospheric-correction model and do not assume $\rho_{\mathrm{toa}} \approx \rho_{\mathrm{surface}}$; rather, they define label-preserving directions in TOA reflectance space along which the predicted mineral label should remain stable.
 
 \subsubsection{Physical predicates}
 \label{sec:lusi_predicates}
@@ -680,11 +681,11 @@ A uniform distribution is chosen because there is no reason to favor any particu
 Aerosol and Rayleigh effects can introduce low-frequency spectral-shape changes that are not diagnostic of mineral identity.
 After robust normalization, these effects are approximated by a small additive wavelength ramp:
 \begin{equation}
-T_{\text{tilt}}(\mathbf{w}) = \mathbf{w} + \xi \boldsymbol{\lambda}_{\text{grid}}, \quad \xi \sim \mathcal{N}(0, 0.01),
-\label{eq:tilt_predicate}
+T_{\text{slope}}(\mathbf{w}) = \mathbf{w} + \xi \boldsymbol{\lambda}_{\text{grid}}, \quad \xi \sim \mathcal{N}(0, 0.01),
+\label{eq:slope_predicate}
 \end{equation}
 where $\boldsymbol{\lambda}_{\text{grid}} = \mathrm{linspace}(-1, 1, L)$.
-This is not intended to be a full atmospheric model; it is a conservative label-preserving perturbation that encourages invariance to smooth spectral tilts while preserving narrow mineral absorption structure.
+This is not intended to be a full atmospheric model; it is a conservative label-preserving perturbation that encourages invariance to smooth spectral-slope changes while preserving narrow mineral absorption structure.
 
 \paragraph{Joint transformation.}
 The two predicates are applied jointly:
@@ -699,8 +700,8 @@ with $\rho$ and $\xi$ sampled independently per sample.
 
 The LUSI loss measures whether the model's mineral classification changes when the input spectrum is physically transformed. The model is run twice on each training batch:
 \begin{enumerate}
-  \item \textbf{Original spectrum} $\mathbf{w}_i$ (``teacher''): the untransformed input, producing prediction $\mathbf{p}_{\text{orig}} = \text{Softmax}(\text{logits}_{\text{orig}} / \tau_l) \in \R^{Q_1}$.
-  \item \textbf{Transformed spectrum} $T_{\text{joint}}(\mathbf{w}_i)$ (``student''): the same pixel after applying the scale and tilt perturbations (Equation~\ref{eq:joint_transform}), producing prediction $\mathbf{p}_{\text{trans}} = \text{Softmax}(\text{logits}_{\text{trans}} / \tau_l) \in \R^{Q_1}$.
+  \item \textbf{Original spectrum} $\mathbf{w}$ (``teacher''): the untransformed input, producing prediction $\mathbf{p}_{\text{orig}} = \text{Softmax}(\text{logits}_{\text{orig}} / \tau_l) \in \R^{Q_1}$.
+  \item \textbf{Transformed spectrum} $T_{\text{joint}}(\mathbf{w})$ (``student''): the same pixel after applying the scale and slope-change perturbations (Equation~\ref{eq:joint_transform}), producing prediction $\mathbf{p}_{\text{trans}} = \text{Softmax}(\text{logits}_{\text{trans}} / \tau_l) \in \R^{Q_1}$.
 \end{enumerate}
 The consistency loss compares the softened prediction for the transformed spectrum to the stop-gradient prediction for the original spectrum:
 \begin{equation}

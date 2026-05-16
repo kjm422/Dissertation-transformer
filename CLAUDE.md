@@ -46,7 +46,7 @@ Physics-informed transformer for hyperspectral mineral classification from EMIT 
 - Group 2 raw: 581.5M pixels (8.16% ID 0). Sampled: 1.26M pixels (10.71% ID 0). Most common G2 class is ID 168 with 77M pixels.
 
 ## Figures inventory (Dissertation_images/)
-- `architecture_diagram.pdf` — full-pipeline TikZ diagram (paper + dissertation), built from `PaperofPartII/test_diagram.tex`
+- `architecture.pdf` — full-pipeline TikZ diagram (paper + dissertation), built from `PaperofPartII/test_diagram.tex`
 - `G1_orig_samphist.png` — Group 1 raw vs. stratified-sample distribution (paper + dissertation)
 - `G2_orig_samphist.png` — Group 2 raw vs. stratified-sample distribution, ID 0 excluded (dissertation only)
 - `G1_hist.png`, `G2_hist.png` — single-panel raw histograms (no longer used in current docs; kept for reference)
@@ -206,6 +206,8 @@ Training outputs are in `Data/attn_outputs_{config}/`:
 - `Data/attn_outputs_Lusi8_diffwt1/` — LUSI 8H (0.796)
 - `Data/attn_outputs_PCALUSI4_8_diffcont_wts1/` — PCA+LUSI 4/8H (0.805)
 - `Data/attn_outputs_PCALUSI8_diffcont_wts1/` — r14 PCA+LUSI 8-head, derivatives, continuum, wv mask, lusi_weight=1
+- `Data/attn_outputs_ManualLusi4_diff/` — Manual+LUSI 4H (top-1 0.795, top-3 0.962; 2026-05-15 — being re-run to recover lost ckpt_best)
+- `Data/attn_outputs_ManualLusi8_diff/` — Manual+LUSI 8H (top-1 0.808, top-3 0.967; 2026-05-15)
 
 ## Dissertation Structure
 Two-part structure with shared intro/background (Chapters 1-3) and closing (Chapters 10-11):
@@ -243,7 +245,7 @@ Now 11 chapters. The former Ch 8 (Physics-Informed Spectral Priors) and Ch 9 (LU
 - Paper §6.2.x (LUSI) and §5.x (Transformer-only results placeholder, `sec:trans_only_results`) — empirical content TBD; `sec:ablation` label in paper still unresolved
 
 ## Documentation
-Spectra_interrogationr2.ipynb contains three mathematical write-ups in markdown cells:
+Spectra_interrogationr3.ipynb contains three mathematical write-ups in markdown cells:
 1. **General Transformer Architecture** — Sections 1-8: preprocessing, tokenization, cross-attention backbone, classification head, optimization, monitoring, outputs
 2. **Physics-Informed Priors** — PCA on USGS ref spectra, continuum removal, hybrid head allocation, freeze schedule, water vapor masking, prior evolution tracking
 3. **LUSI Consistency Regularization** — Vapnik connection, scale/slope predicates, KL divergence loss, empirical findings
@@ -269,11 +271,13 @@ Notation conventions (updated 2026-04-14): $\mathbf{W}^p \in \R^{N \times L}$ fo
 
   *(Softened 2026-05-10: was "the two foundational ingredients" — superseded because no canonical PINN literature defines exactly two ingredients; Karpatne 2017 lists 6+. "Two of the foundational injection modes" with explicit citations is honest and survives reviewer scrutiny.)*
 
-- **Significance Statement** (117 words, current version after 2026-05-10 framing pass):
+- **Significance Statement** (81 words, current version after 2026-05-15 simplification pass):
 
-  > "Mapping Earth's surface mineralogy from orbiting hyperspectral sensors is critical for understanding mineral dust's role in climate, but operational pipelines depend on iterative per-pixel radiative transfer inversion and spectral library matching that delivers products with multi-month latency. We show that a cross-attention transformer trained on uncorrected top-of-atmosphere reflectance replaces this multi-step pipeline with a single forward pass, recovering canonical iron-oxide absorption features through interpretable attention. The approach realizes physics-informed deep learning in attention architectures through two complementary mechanisms: spectroscopic priors and statistical-invariance regularization. Inference orders of magnitude faster than the operational pipeline opens pathways to onboard processing, near-realtime delivery, and reduced operational cost. The framework transfers to any physical-science setting where labels come from an upstream physical model."
+  > "Using hyperspectral imagery from orbiting remote-sensing platforms to identify surface materials and their abundances requires computationally intensive atmospheric correction and downstream spectral-library matching. However, a cross-attention spectral transformer trained directly on top-of-atmosphere reflectance can serve as a low-latency surrogate for mineral identification, using a single forward pass. The architecture creates a transparent path for adding established physical knowledge. The result is an efficient framework for physics-informed transformers that supports faster ground processing, onboard screening, and revisit decision support for space-based applications."
 
-  *(Replaces 2026-05-04 draft that opened with "rejects the very high-aerosol pixels...because the underlying radiative transfer inversion fails" — superseded; the L2A ATBD claims OE handles high-AOD, the masking is a downstream conservative quality choice. New hook is operational latency, citing L2B ATBD's 2-month median delivery latency.)*
+  *(Replaces 2026-05-10 117-word version that opened with "Mapping Earth's surface mineralogy...". Current pass: tighter, audience-broader, less mineral-dust-specific opener; explicit operational endpoints — ground processing / onboard screening / revisit decision support — kept. Same operational-latency framing motivation but with the dust/climate motivation moved out of the sig statement and into the introduction proper.)*
+
+  Same operational-endpoint sentence was imported into the abstract closing of `partII_paper.tex` on 2026-05-15 ("Together, these results position physics-informed cross-attention as an efficient, interpretable surrogate ... that can support faster ground processing, onboard screening, and revisit decision support for space-based applications."). The dissertation abstract already had equivalent operational language in its closing paragraph and was not edited.
 
 - **Results structure** (3 subsections, with priors and LUSI as parallel physics-injection mechanisms — *not* as method + side-experiment):
   1. Cross-attention transformer recovers Fe³⁺ diagnostics from TOA reflectance (uses Fig: per-head attention)
@@ -283,7 +287,7 @@ Notation conventions (updated 2026-04-14): $\mathbf{W}^p \in \R^{N \times L}$ fo
 - **LUSI in/out-of-distribution narrative (revised 2026-05-11)**: legacy framing was "LUSI is the only configuration that improves on SW (+2.6 pp pixel-level)"; superseded by locked-pipeline granule-scale evaluation in which no configuration improves on SW. New narrative: LUSI exposes a robustness-vs-accuracy tradeoff — it retains the highest macro-recall on SW at both 4H (0.218) and 8H (0.210) while losing top-1 dominance under cross-region deployment. Still PNAS-friendly because the tradeoff is consistent with PINN-literature observations that physics-driven regularization sacrifices in-distribution accuracy for invariance-sensitive metrics; weaker headline than the legacy +2.6 pp finding but defensible.
 
 - **Main-text figures/tables (max 4)**:
-  1. Architecture pipeline (`architecture_diagram.pdf`)
+  1. Architecture pipeline (`architecture.pdf`)
   2. Per-head attention plot (`4Hxformer_attnplot.png`)
   3. Headline ablation table (Trans 4H/8H × Manual 4H/8H + curated PCA 4H)
   4. Cross-region deployment bar chart (uniform ~18 pp top-1 degradation across all four locked 8H configs on SW; LUSI macro-recall edge) — needs to be created from the locked-pipeline granule-mean data (Table~`tab:crossscene`)
@@ -345,7 +349,7 @@ Substantive corrections applied to PNAS paper after re-reading L2A and L2B ATBDs
 - All `detr` / `carion2020detr` references removed from both bib files; no remaining citations to DETR in either document.
 
 ## Architecture Diagram
-- Source: `Disseratation_txt/PaperofPartII/test_diagram.tex` (TikZ standalone) → renders to `test_diagram.pdf` → copied to `Dissertation_images/architecture_diagram.pdf` for use in both paper and dissertation
+- Source: `Disseratation_txt/PaperofPartII/test_diagram.tex` (TikZ standalone) → renders to `test_diagram.pdf` → copied to `Dissertation_images/architecture.pdf` for use in both paper and dissertation
 - All main forward-pass nodes are filled `gray!20`; color is reserved for the four group regions and for optional/loss boxes
 - Four dashed-bordered group regions wrap the forward pass and align 1:1 with paper subsections (mirrored in dissertation): (1) `sec:preprocessing` light yellow, (2) `sec:tokenization` pink (Vaswani embedding color), (3) `sec:attn_pooling` light orange (Vaswani attention color), (4) `sec:classification` light cyan (Vaswani feed-forward color). Group titles bold-set in top-left of each region
 - Yellow boxes (`bias` for spectral priors $\bm{\beta}_h$, `lusi` for $T_{\text{joint}}$ and $D_{\text{KL}}$) sit *outside* the four group regions because they augment rather than replace the base pass
@@ -354,7 +358,9 @@ Substantive corrections applied to PNAS paper after re-reading L2A and L2B ATBDs
 - Robust z-score equation $\hat{w}_j = (w_j - \text{median}(\mathbf{w}))/(\text{IQR}(\mathbf{w}) + \epsilon)$ is rendered inside the `norm` block (not just labelled)
 - Figure caption in both files names each region and links it to the matching subsection label
 - Tikz libraries used: `positioning, arrows.meta, shapes.geometric, calc, fit, backgrounds`; the `fit` library + `on background layer` is what draws the four group regions cleanly behind the nodes
-- Recompile after edits: `cd Disseratation_txt/PaperofPartII && pdflatex test_diagram.tex && cp test_diagram.pdf ../Dissertation_images/architecture_diagram.pdf`
+- Recompile after edits: `cd Disseratation_txt/PaperofPartII && pdflatex test_diagram.tex && cp test_diagram.pdf ../Dissertation_images/architecture.pdf`
+- Filename change (2026-05-15): canonical PDF is now `architecture.pdf` (was `architecture_diagram.pdf`). All three documents updated to `\includegraphics{architecture.pdf}`. Old `architecture_diagram.pdf` is retained in git history but no longer referenced; can be removed in a future cleanup commit.
+- LUSI arrow rendering (2026-05-15): the LUSI branch now uses ONE dotted arrow from `out` to `kl` carrying both the teacher pass (label above the arrow, "teacher pass → p_orig") and the student pass (label below the arrow, "student pass → p_trans"), instead of two separate curved arrows. The augmented-input student pass is shown by the `T → norm.east` dotted arrow that re-enters the pipeline at the normalization stage.
 
 ## LUSI Findings
 LUSI does not improve accuracy in any configuration tested:
@@ -363,6 +369,16 @@ LUSI does not improve accuracy in any configuration tested:
 - 8-head PCA+LUSI (0.805) matches PCA-only (0.806) within noise
 - LUSI loss is small (~0.03) at convergence — model already achieves brightness/slope invariance through training
 - Conclusion: explicit invariance regularization is redundant at ~1M pixel data scale
+
+### Manual+LUSI runs (2026-05-15)
+LUSI added to the manual spectral prior:
+
+- **Manual+LUSI 4H**: top-1 0.795, top-3 0.962. Drops below Manual-only 4H (0.808) by **−1.3 pp**, mirroring PCA+LUSI 4H (PCA-zabs 0.809 → PCA+LUSI 0.790). LUSI's consistency loss interacts destructively with a structured architectural prior at constrained capacity.
+- **Manual+LUSI 8H**: top-1 0.808, top-3 0.967. Statistically tied with Manual-only 8H (0.806). LUSI adds neither benefit nor harm at saturated capacity when paired with the manual prior — different from PCA where LUSI hurt at both head counts.
+- LUSI loss settles at ~0.033 (4H) and ~0.037 (8H), similar magnitude to LUSI-only runs.
+- Practical conclusion (now consistent across PCA+LUSI and Manual+LUSI): the consistency loss does not stack additively with architectural priors. At constrained capacity it pulls accuracy below the prior-only baseline; at saturated capacity it is at best neutral.
+
+Notes on the Manual+LUSI 4H artifact: the original 2026-05-15 run lost its `ckpt_best_qoiattn_nozeros.pt` because the wrapping shell script ran both 4H and 8H from the same CWD and the 8H epoch-1 save overwrote it. `spectral_stage1_qoiattn_nozeros.pt` (final-epoch ckpt) saved by training script line 1063 is **not usable for inference** — it omits the classifier head dict. A re-run with cwd inside the output folder is in progress to recover a usable checkpoint.
 
 ## Broken-PCA-Prior Finding (2026-05-03)
 The legacy `physics_mode=pca` pipeline (r14, retained in r17 for backward-compatibility runs) silently produces nonsense priors when run on the 93-spectrum Group-1 file. Root cause is in `make_pca_priors_from_ref` (the carried-forward implementation in [spectral_trans_withqoi_attentionr17_pcalusi.py](kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py)):
