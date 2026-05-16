@@ -69,21 +69,21 @@ The result is an efficient framework for physics-informed transformers that supp
 % ============================================================================
 \section*{Abstract}
 \noindent
-Hyperspectral imaging spectrometers, particularly those operating in the visible shortwave infrared (VSWIR) range, enable quantitative remote-sensing measurement of surface composition.
+Hyperspectral imaging spectrometers enable quantitative remote-sensing measurement of surface composition.
 Different materials leave distinct signatures in the reflected-light spectrum, from which their identity and abundance can be inferred.
-NASA's Earth Surface Mineral Dust Source Investigation (EMIT) maps arid-region surface mineralogy with 285-band imaging spectroscopy. 
-Operational data products require atmospheric correction and spectral-library matching before mineral identification. 
-This paper presents a cross-attention transformer that predicts mineral labels directly from uncorrected top-of-atmosphere (TOA) reflectance, providing a post-hoc surrogate for the L1B-to-mineral ID classification at inference time.
-The architecture treats each pixel spectrum as a wavelength-indexed sequence and uses learned query vectors to pool spectral evidence across bands. 
-Two physics-injection mechanisms are evaluated within this attention architecture: spectroscopic priors, implemented as per-head attention-bias initialization from laboratory diagnostic wavelengths or USGS reference spectra, and statistical-invariance regularization, implemented as a consistency loss under label-preserving illumination and smooth spectral-slope perturbations. 
-The best physics-prior configuration improves top-1 validation accuracy relative to the 8-head transformer-only baseline, while lower-capacity manual priors recover comparable accuracy with reduced training cost.
-Attention analysis shows that the model emphasizes visible and near-infrared regions associated with Fe$^{3+}$ absorption structure, although attention weights are interpreted as diagnostic rather than causal explanations. 
-Cross-region and full-granule experiments reveal a tradeoff: spectral priors improve top-1 accuracy, interpretability, and rare-class behavior (especially at constrained capacity), whereas statistical-invariance regularization's effect is concentrated in rare-class sensitivity rather than uniformly improving top-1 accuracy. 
-These results demonstrate that physics-informed attention can provide efficient, interpretable surrogates for elements of hyperspectral mineral-retrieval pipelines.
+NASA's Earth Surface Mineral Dust Source Investigation (EMIT) maps arid-region surface mineralogy with 285-band imaging spectroscopy across the visible shortwave infrared (VSWIR) range.
+Operational data products require atmospheric correction and spectral-library matching before mineral identification, slowing the processing pipeline. 
+This paper presents a cross-attention transformer that predicts a mineral-class probability distribution directly from uncorrected top-of-atmosphere (TOA) reflectance, providing a post-hoc surrogate at inference time.
+The transformer architecture treats each pixel spectrum as a wavelength-indexed sequence and uses learned query vectors to pool spectral evidence across bands. 
+Two physics-infusion extensions are evaluated: 1) spectroscopic priors, implemented as per-head attention-bias initialization from diagnostic wavelengths or USGS reference spectra, and 2) statistical-invariance regularization, implemented as a consistency loss under label-preserving illumination and spectral-slope perturbations. 
+The 8-head spectroscopic prior configuration improves validation accuracy relative to the 8-head transformer-only baseline, while the lower-capacity 4-head configuration recovers comparable accuracy with reduced training cost.
+Attention analysis shows that the model emphasizes visible and near-infrared regions associated with expected Fe$^{3+}$ absorption structure. 
+Cross-region experiments reveal a tradeoff: spectral priors improve accuracy, interpretability, and rare-class behavior (especially at constrained capacity), whereas statistical-invariance regularization's effect is concentrated in rare-class sensitivity. 
+These results demonstrate that physics-informed transformer architectures can provide efficient, interpretable surrogates for elements of hyperspectral mineral-retrieval pipelines, improving product latency.
 \vspace{1em}
 \noindent
 
-\textbf{Keywords:}  physics-informed cross-attention$\vert$ hyperspectral imaging $\vert$ mineral classification $\vert$ statistical invariance $\vert$ spectral prior  
+\textbf{Keywords:}  physics-informed transformer $\vert$ HSI $\vert$ mineral classification $\vert$ statistical invariance $\vert$ spectral prior  
 
 
 % ============================================================================
@@ -97,14 +97,14 @@ current climate models rely on uncertain estimates of iron-oxide abundance and c
 NASA's Earth Surface Mineral Dust Source Investigation (EMIT) was launched in 2022 to reduce this uncertainty by mapping arid-region surface mineralogy, producing approximately 1.6-million-pixel granules across 285 spectral bands.
 Translating this data stream into operational mineral-identification products is therefore both a scientific and computational challenge.
 
-The standard mineral-identification pipeline applied to EMIT and similar imaging-spectroscopy missions is a multi-stage sequence of per-pixel operations: atmospheric correction through radiative-transfer-model (RTM) inversion, followed by spectral-library matching against curated laboratory reference spectra.
+The standard mineral-identification pipeline applied to EMIT and similar imaging-spectroscopy missions is a multi-stage sequence of per-pixel operations.
 Operational implementations rely on optimization-based schemes such as the Imaging Spectrometer Optimal Fitting (ISOFIT) inversion, often accelerated by neural-network RTM emulators \cite{thompson2018, brodrick2021}, before downstream mineral identification is performed.
 Beyond the per-pixel computational cost, the staged architecture imposes operational latency.
 EMIT mineral products are delivered with a two-month median latency from acquisition \cite{emit_l2b_atbd}, reflecting downlink, ingest, queueing, atmospheric correction, mineral matching, quality control, and archive production.
-For petabyte-scale missions or time-sensitive applications such as volcanic-ash mapping, post-fire debris characterization, and dust-storm response, this operational delivery cycle becomes a constraint and burden separate from the cost of any single per-pixel computation.
+For petabyte-scale missions or time-sensitive applications such as volcanic-ash mapping, post-fire debris characterization, and dust-storm response, this operational delivery cycle becomes a constraint and burden separate from the cost of per-pixel computation.
 
-This paper proposes an alternative paradigm: \emph{post-hoc direct retrieval with physics-informed injection} (Figure~\ref{fig:data_levels}).
-Rather than executing the RTM-based atmospheric-correction and spectral-matching chain at inference time, a learned model is trained on a comparitively small set of previously processed L1B--L2B pairs and then used as a low-latency surrogate for the operational L1B-to-mineral ID mapping.
+This paper proposes an alternative paradigm: \emph{post-hoc direct retrieval with physics-informed supervision} (Figure~\ref{fig:data_levels}).
+Rather than executing the RTM-based atmospheric-correction and spectral-matching chain at inference time, a learned model is trained on a comparatively small set of previously processed L1B--L2B pairs and then used as a low-latency surrogate for the operational L1B-to-mineral ID mapping.
 The model does not produce an atmospherically corrected reflectance product, nor does it claim independent mineral truth; 
 its supervision is inherited from the operational science-data-system labels.
 Its value is instead operational and methodological: after the one-time training cost, inference requires only a single forward pass from top-of-atmosphere (TOA) reflectance to mineral class.
@@ -121,27 +121,29 @@ the proposed approach maps L1B TOA reflectance directly to a mineral-class proba
 This direct TOA formulation is challenging because the model must infer mineralogical structure from spectra in which the surface signal is mixed with atmospheric scattering, absorption, transmission, illumination geometry, and sensor effects.
 A purely data-driven model may learn useful spectral structure, but it may also exploit scene-specific shortcuts that do not transfer across regions.
 The question addressed here is therefore not simply whether a transformer can classify EMIT spectra, but how physical knowledge should enter an attention-based model trained on operational remote-sensing products.
-This question is studied through two physics-injection mechanisms: one architectural and one loss-based.
+This question is studied through two physics-infusion mechanisms: one architectural and one loss-based.
 
 The cross-attention transformer presented here draws on the physics-informed and theory-guided machine-learning literature \cite{karpatne2017tgds, raissi2019pinn}.
-Spectroscopic knowledge enters through the per-head attention bias $\bm{\beta}_h$, which can be initialized from known Fe$^{3+}$ diagnostic wavelengths or from principal components of EMIT-resampled USGS reference spectra.
-Statistical-invariance knowledge enters through a consistency loss adapted from Vapnik \cite{vapnik2020}, which encourages predictions to remain stable under label-preserving TOA perturbations representing illumination scaling and smooth spectral-slope variation.
-These mechanisms do not impose a hard radiative-transfer constraint and do not assume that TOA reflectance equals surface reflectance.
-Instead, they provide controlled ways to test how spectroscopic priors and atmospheric invariance affect a learned post-hoc retrieval surrogate.
+Spectroscopic knowledge enters through the per-head attention bias $\bm{\beta}_h$, which can be initialized from known diagnostic wavelengths or from principal components of EMIT-resampled USGS reference spectra.
+Statistical-invariance knowledge enters through a consistency loss adapted from Vapnik \cite{vapnik2020}, which encourages predictions to remain stable under TOA perturbations representing illumination scaling and spectral-slope variation.
+These mechanisms act as soft physical guidance rather than hard physical constraints.
+They do not impose a PDE, solve the radiative-transfer equation, or assume that TOA reflectance equals surface reflectance.
+Instead, they provide controlled ways to test how spectroscopic priors and statistical-invariance assumptions affect a learned post-hoc retrieval, physics-informed surrogate.
 
-The approach is demonstrated on EMIT TOA hyperspectral observations for 95 Group~1 mineral classes.
-The transformer learns Fe$^{3+}$-relevant spectral structure directly from data, with attention concentrating near visible and near-infrared regions associated with iron-oxide absorption.
-Spectral-prior initialization improves top-1 accuracy, interpretability, and capacity efficiency, with the magnitude depending on head count and prior construction; statistical-invariance regularization's effect is concentrated in rare-class sensitivity rather than uniformly improving top-1 accuracy.
-Together, these results position physics-informed attention as a practical mechanism for accelerating and interpreting the hyperspectral mineral-identification pipeline.
+The approach is demonstrated on EMIT TOA hyperspectral observations for 95 Group~1 mineral classes, but the approach is sensor agnostic.
+The transformer learns relevant spectral structure directly from data, with attention concentrating near visible and near-infrared regions associated with iron-oxide absorption.
+Spectral-prior initialization improves accuracy, interpretability, and capacity efficiency, with the improvement magnitude depending on head count and prior construction methodology; 
+statistical-invariance regularization's effect is concentrated in rare-class sensitivity rather than uniformly improving accuracy.
+Together, these results position physics-informed spectral transformers as a practical mechanism for accelerating and interpreting the hyperspectral mineral-identification pipeline.
 
 % ============================================================================
-% 2. RESULTS  (~1500 words target; structure + TODO markers)
+% 2. RESULTS  (~1500 words target; structure 
 % ============================================================================
 \section{Results}
 
-A 4 and 8-head transformer baseline are trained on 1.26~million class-balanced TOA pixels from 396 EMIT granules over Africa and the Middle East, using derivative tokenization, learned query vectors, and a zero-initialized \emph{trainable} attention bias $\bm{\beta}_h$. 
+A 4 and 8-head transformer baseline are trained on 1.26~million class-balanced TOA pixels from 396 EMIT granules over Africa and the Middle East.
 No spectroscopic prior and no statistical-invariance regularization were applied in this baseline. 
-Physics-injection configurations are evaluated against this baseline.
+Two physics-informed configurations are subsequently evaluated against this transformer-only baseline: 1) spectroscopic priors, implemented as per-head attention-bias initialization (from diagnostic wavelengths or USGS reference spectra), and 2) statistical-invariance regularization, implemented as a consistency loss (under label-preserving illumination and spectral-slope perturbations). 
 
 \subsection{Cross-attention transformer learns spectral structure from TOA reflectance}
 
@@ -153,15 +155,6 @@ The attention patterns show that the model emphasizes several wavelength neighbo
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=\linewidth]{architecture.pdf}
-\caption{End-to-end architecture overview. 
-The forward pass is partitioned into four regions: preprocessing, tokenization, attention pooling, and classification. 
-Spectral priors enter through the per-head attention bias $\bm{\beta}_h$; statistical-invariance regularization requires a second (student) forward pass through the network on a transformed input $T_{\text{joint}}(\mathbf{w})$, with the resulting prediction compared against the teacher prediction via a KL consistency loss.}
-\label{fig:architecture}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
 \includegraphics[width=\linewidth]{attention_headavg_compare4h.png}
 \caption{Head-averaged class-conditional mean attention, $\bar{\mathbf{A}}^{(c)} \in \R^{285}$ for hematite (top) and goethite (bottom) at $H=4$. 
 Curves compare the transformer baseline, manual Fe$^{3+}$ prior, PCA-curated prior, and LUSI configuration. 
@@ -170,6 +163,17 @@ The manual prior concentrates attention near canonical visible and VNIR ferric-i
 The unguided transformer and LUSI configurations retain substantial attention at non-canonical wavelengths.}
 \label{fig:trans4_attn}
 \end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{architecture.pdf}
+\caption{End-to-end architecture overview. 
+The forward pass is partitioned into four regions: preprocessing, tokenization, attention pooling, and classification. 
+Spectral priors enter through the per-head attention bias $\bm{\beta}_h$; statistical-invariance regularization requires a second (student) forward pass through the network on a transformed input $T_{\text{joint}}(\mathbf{w})$, with the resulting prediction compared against the teacher prediction via a KL consistency loss.}
+\label{fig:architecture}
+\end{figure}
+
+
 
 These attention results should not be read as a complete explanation of the final class decision.
 Hematite and goethite often share the same attended wavelength neighborhoods because both are ferric-iron minerals.
@@ -225,7 +229,7 @@ They are instead soft invariance predicates in TOA-input space.
 \begin{table}[!htbp]
 \centering
 \small
-\caption{Train-region (Africa/Middle East) and cross-region (SW US) accuracy for the locked configurations. Train columns report the held-out validation-pool accuracy on Africa/Middle East pixels. SW columns report the mean accuracy across 20 SW US granules each containing at least $20\%$ Group-1 mineral pixels, under full-granule inference. Pink rows mark the unguided transformer-only baselines at each head count; bold marks the leader within each head-count block on each SW metric.}
+\caption{Train-region (Africa/Middle East) and cross-region (SW US) accuracy for the locked configurations. Train columns report the held-out validation-pool accuracy on Africa/Middle East pixels. SW columns report the mean accuracy across 20 SW US granules each containing at least $20\%$ Group-1 mineral pixels, under full-granule inference. Pink rows mark the unguided transformer-only baselines at each head count; bold marks the leader within each head-count block on each SW metric. The Manual + LUSI rows report training-region accuracy only; cross-region inference has not yet been run on those checkpoints.}
 \label{tab:crossscene}
 \begin{tabular}{p{0.24\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.13\linewidth}}
 \hline
@@ -241,6 +245,8 @@ PCA-zabs 4H & 0.809 & 0.644 & 0.967 & 0.868 \\
 \hline
 LUSI 4H & 0.787 & 0.634 & 0.961 & 0.875 \\
 \hline
+Manual + LUSI 4H & 0.795 & -- & 0.962 & -- \\
+\hline
 \rowcolor{pink!30}
 Trans 8H & 0.819 & 0.683 & 0.970 & 0.902 \\
 \hline
@@ -249,6 +255,8 @@ Manual 8H & 0.806 & 0.699 & 0.966 & 0.896 \\
 \textbf{PCA-zabs 8H} & 0.818 & \textbf{0.705} & 0.970 & \textbf{0.910} \\
 \hline
 LUSI 8H & 0.796 & 0.666 & 0.962 & 0.893 \\
+\hline
+Manual + LUSI 8H & 0.808 & -- & 0.967 & -- \\
 \hline
 \end{tabular}
 \end{table}
