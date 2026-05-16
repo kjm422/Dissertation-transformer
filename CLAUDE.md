@@ -206,7 +206,7 @@ Training outputs are in `Data/attn_outputs_{config}/`:
 - `Data/attn_outputs_Lusi8_diffwt1/` — LUSI 8H (0.796)
 - `Data/attn_outputs_PCALUSI4_8_diffcont_wts1/` — PCA+LUSI 4/8H (0.805)
 - `Data/attn_outputs_PCALUSI8_diffcont_wts1/` — r14 PCA+LUSI 8-head, derivatives, continuum, wv mask, lusi_weight=1
-- `Data/attn_outputs_ManualLusi4_diff/` — Manual+LUSI 4H (top-1 0.795, top-3 0.962; 2026-05-15 — being re-run to recover lost ckpt_best)
+- `Data/attn_outputs_ManualLusi4_diff/` — Manual+LUSI 4H (top-1 0.795, top-3 0.962; original 2026-05-15 run, rerun 2026-05-16 with cwd inside output folder to recover usable ckpt_best at epoch 118)
 - `Data/attn_outputs_ManualLusi8_diff/` — Manual+LUSI 8H (top-1 0.808, top-3 0.967; 2026-05-15)
 
 ## Dissertation Structure
@@ -378,7 +378,7 @@ LUSI added to the manual spectral prior:
 - LUSI loss settles at ~0.033 (4H) and ~0.037 (8H), similar magnitude to LUSI-only runs.
 - Practical conclusion (now consistent across PCA+LUSI and Manual+LUSI): the consistency loss does not stack additively with architectural priors. At constrained capacity it pulls accuracy below the prior-only baseline; at saturated capacity it is at best neutral.
 
-Notes on the Manual+LUSI 4H artifact: the original 2026-05-15 run lost its `ckpt_best_qoiattn_nozeros.pt` because the wrapping shell script ran both 4H and 8H from the same CWD and the 8H epoch-1 save overwrote it. `spectral_stage1_qoiattn_nozeros.pt` (final-epoch ckpt) saved by training script line 1063 is **not usable for inference** — it omits the classifier head dict. A re-run with cwd inside the output folder is in progress to recover a usable checkpoint.
+Notes on the Manual+LUSI 4H artifact: the original 2026-05-15 run lost its `ckpt_best_qoiattn_nozeros.pt` because the wrapping shell script ran both 4H and 8H from the same CWD and the 8H epoch-1 save overwrote it. `spectral_stage1_qoiattn_nozeros.pt` (final-epoch ckpt) saved by training script line 1063 is **not usable for inference** — it omits the classifier head dict. Re-run on 2026-05-16 with cwd inside the output folder recovered a usable `ckpt_best` at epoch 118 (val_acc1 = 0.7961, reproducing the original 0.7950 final-epoch metric within noise). For future multi-job training scripts, run each from inside its own output folder to avoid CWD collisions on the best-checkpoint file.
 
 ## Broken-PCA-Prior Finding (2026-05-03)
 The legacy `physics_mode=pca` pipeline (r14, retained in r17 for backward-compatibility runs) silently produces nonsense priors when run on the 93-spectrum Group-1 file. Root cause is in `make_pca_priors_from_ref` (the carried-forward implementation in [spectral_trans_withqoi_attentionr17_pcalusi.py](kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py)):
