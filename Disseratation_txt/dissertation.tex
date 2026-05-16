@@ -2072,6 +2072,16 @@ Figure~\ref{fig:earlyepoch} compares the full 120-epoch training trajectories ac
 \label{fig:earlyepoch}
 \end{figure}
 
+\paragraph{First-five-epoch zoom-in.}
+Figure~\ref{fig:earlyepoch_zoom} zooms in on the first 5 epochs of all 10 parameter-matched configurations of Table~\ref{tab:ablation} (now including both Manual~+~LUSI runs). The architectural-prior advantage is visible from the very first epoch: at $H = 4$ the manual prior reaches $0.331$ top-1 after a single epoch versus $0.306$ for the unguided baseline, a $+2.5$~pp head start delivered by spectroscopic initialization alone before any data-driven learning has had time to discover Fe$^{3+}$-relevant structure independently. At $H = 8$, the four configurations (PCA, Trans, Manual, Manual~+~LUSI) cluster at the top of the epoch-1 ranking ($\sim 0.34$--$0.36$), with capacity rather than prior identity carrying most of the early-epoch advantage at this scale. The four LUSI configurations cluster near the bottom of the epoch-1 top-1 ranking, consistent with the consistency-loss training-cost overhead reducing effective per-epoch learning.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{compare_runs_early.png}
+\caption{First-five-epoch convergence trajectories across the ten parameter-matched configurations of Table~\ref{tab:ablation}. \textbf{Left:} training loss (lower is better). \textbf{Center:} validation top-1. \textbf{Right:} validation top-3. Legend entries list the epoch-1 value and are sorted by epoch-1 validation top-1 (descending). Colors are consistent with the full-trajectory view of the same runs in Figure~\ref{fig:earlyepoch}. The manual prior leads the unguided baseline at $H = 4$ by $+2.5$~pp after the first epoch ($0.331$ vs $0.306$); the four LUSI configurations cluster near the bottom of the epoch-1 ranking.}
+\label{fig:earlyepoch_zoom}
+\end{figure}
+
 The two architectural-prior configurations (Manual, PCA-curated) lead the unguided baselines from the earliest logged epochs and maintain that lead through training, consistent with the +1.9~pp final-epoch gap reported in Table~\ref{tab:ablation}. The transformer baseline and LUSI-only configurations are visually indistinguishable on validation top-1 across the full trajectory (final values 0.789 and 0.787 respectively, well within the $\pm 0.5$~pp seed-noise band established for these single-seed runs). The earlier observation that LUSI ``slows in-distribution convergence'' was an artifact of the wv-mask interacting with the consistency loss in the legacy LUSI configuration; with the mask dropped from LUSI (Section~\ref{sec:wv_mask}), no such slowdown remains. The two-mechanism reading of the framework is preserved at a different cut: architectural priors provide a direct accuracy lift in-distribution, while loss-based priors give cross-region robustness without an in-distribution penalty (Chapter~\ref{chap:generalization}).
 
 \paragraph{Caveat on the legacy in-line PCA pipeline.}

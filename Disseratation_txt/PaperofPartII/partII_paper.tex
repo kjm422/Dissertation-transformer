@@ -835,6 +835,16 @@ Figure~\ref{fig:earlyepoch} compares the full 120-epoch training trajectories ac
 \label{fig:earlyepoch}
 \end{figure}
 
+\paragraph{Epoch-1 architectural-prior head start.}
+Figure~\ref{fig:earlyepoch_zoom} zooms in on the first 5 epochs across all 10 parameter-matched configurations of Table~\ref{tab:ablation} (including the two Manual + LUSI runs). At $H = 4$, the manual prior reaches $0.331$ top-1 after a single epoch versus $0.306$ for the unguided baseline --- a $+2.5$~pp head start delivered by spectroscopic initialization before any data-driven learning has had time to discover Fe$^{3+}$-relevant structure independently. At $H = 8$, the four configurations (PCA, Trans, Manual, Manual + LUSI) cluster at the top of the epoch-1 ranking ($\sim 0.34$--$0.36$), with capacity rather than prior identity carrying most of the early-epoch advantage at this scale. The LUSI configurations cluster near the bottom of the epoch-1 top-1 ranking, consistent with the consistency-loss training-cost overhead reducing effective per-epoch learning.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\textwidth]{compare_runs_early.png}
+\caption{First-five-epoch convergence trajectories across the ten parameter-matched configurations of Table~\ref{tab:ablation}. \textbf{Left:} training loss. \textbf{Center:} validation top-1. \textbf{Right:} validation top-3. Legend entries list the epoch-1 value and are sorted by epoch-1 validation top-1 (descending). Colors are consistent with the full-trajectory view of the same runs in Figure~\ref{fig:earlyepoch}. The manual prior leads the unguided baseline at $H = 4$ by $+2.5$~pp after the first epoch ($0.331$ vs $0.306$); the four LUSI configurations cluster near the bottom of the epoch-1 ranking.}
+\label{fig:earlyepoch_zoom}
+\end{figure}
+
 \paragraph{Caveats.}
 The reported numbers are single-seed runs at one training-set size ($N \approx 1.26 \times 10^{6}$).
 At smaller training sizes the prior would be expected to provide larger gains (consistent with prior-as-capacity-substitute interpretation), and at larger training sizes the gap should shrink further --- a direct test of this would require re-running the full ablation at $N = 10^4, 10^5, 10^6$ pixels, which is left for future work.

@@ -123,7 +123,7 @@ A purely data-driven model may learn useful spectral structure, but it may also 
 The question addressed here is therefore not simply whether a transformer can classify EMIT spectra, but how physical knowledge should enter an attention-based model trained on operational remote-sensing products.
 This question is studied through two physics-infusion mechanisms: one architectural and one loss-based.
 
-The cross-attention transformer presented here draws on the physics-informed and theory-guided machine-learning literature \cite{karpatne2017tgds, raissi2019pinn}.
+The physics-augmented cross-attention transformer presented here draws on the PINN and the TGDS machine-learning literature \cite{karpatne2017tgds, raissi2019pinn}.
 Spectroscopic knowledge enters through the per-head attention bias $\bm{\beta}_h$, which can be initialized from known diagnostic wavelengths or from principal components of EMIT-resampled USGS reference spectra.
 Statistical-invariance knowledge enters through a consistency loss adapted from Vapnik \cite{vapnik2020}, which encourages predictions to remain stable under TOA perturbations representing illumination scaling and spectral-slope variation.
 These mechanisms act as soft physical guidance rather than hard physical constraints.
@@ -141,17 +141,58 @@ Together, these results position physics-informed spectral transformers as a pra
 % ============================================================================
 \section{Results}
 
-A 4 and 8-head transformer baseline are trained on 1.26~million class-balanced TOA pixels from 396 EMIT granules over Africa and the Middle East.
-No spectroscopic prior and no statistical-invariance regularization were applied in this baseline. 
-Two physics-informed configurations are subsequently evaluated against this transformer-only baseline: 1) spectroscopic priors, implemented as per-head attention-bias initialization (from diagnostic wavelengths or USGS reference spectra), and 2) statistical-invariance regularization, implemented as a consistency loss (under label-preserving illumination and spectral-slope perturbations). 
+Four- and eight-head transformer baselines were trained on 1.26~million class-capped TOA pixels from 396 EMIT granules collected over Africa and the Middle East. 
+The transformer-only baselines used derivative tokenization, learned query vectors, and zero-initialized trainable attention biases, but no spectroscopic prior and no statistical-invariance regularization. 
+Two physics-injection mechanisms against these baselines: 
+(1) spectroscopic priors, implemented as per-head attention-bias initialization from either diagnostic wavelengths or USGS reference spectra, and 
+(2) statistical-invariance regularization, implemented as a consistency loss under label-preserving illumination and spectral-slope perturbations. 
+Combined prior-plus-regularization models were trained to test whether the mechanisms stack or interfere.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{In-region validation and cross-region full-granule accuracy for locked configurations. 
+Validation columns report held-out Africa/Middle East pixel accuracy. 
+SW US columns report mean accuracy across 20 southwestern US granules (each containing at least $20\%$ Group~1 mineral pixels). 
+Shaded rows are unguided transformer-only baselines at each head count; bold values mark the leader within each head-count block for each SW US metric.}
+\label{tab:crossscene}
+\begin{tabular}{p{0.2\linewidth}p{0.13\linewidth}p{0.15\linewidth}p{0.13\linewidth}p{0.15\linewidth}}
+\hline
+\rowcolor[gray]{0.85}
+\textbf{Configuration} & \textbf{Validation Set Top-1} & \textbf{SW US Top-1} & \textbf{Validation Set Top-3} & \textbf{SW US Top-3} \\
+\hline
+\rowcolor{pink!30}
+Trans 4H & 0.789 & 0.669 & 0.961 & 0.877 \\
+\hline
+\textbf{Manual 4H} & 0.808 & \textbf{0.724} & 0.967 & \textbf{0.919} \\
+\hline
+PCA 4H & 0.809 & 0.644 & 0.967 & 0.868 \\
+\hline
+LUSI 4H & 0.787 & 0.634 & 0.961 & 0.875 \\
+\hline
+Manual + LUSI 4H & 0.795 & -- & 0.962 & -- \\
+\hline
+\rowcolor{pink!30}
+Trans 8H & 0.819 & 0.683 & 0.970 & 0.902 \\
+\hline
+Manual 8H & 0.806 & 0.699 & 0.966 & 0.896 \\
+\hline
+\textbf{PCA 8H} & 0.818 & \textbf{0.705} & 0.970 & \textbf{0.910} \\
+\hline
+LUSI 8H & 0.796 & 0.666 & 0.962 & 0.893 \\
+\hline
+Manual + LUSI 8H & 0.808 & -- & 0.967 & -- \\
+\hline
+\end{tabular}
+\end{table}
 
 \subsection{Cross-attention transformer learns spectral structure from TOA reflectance}
 
 A cross-attention transformer with $H$ learned query vectors that probe an $L=285$-band spectral token sequence. 
 Each head produces a per-pixel attention vector, $\mathbf{A}_h \in \R^L$.
 Figure~\ref{fig:trans4_attn} compares class-conditional mean attention for hematite and goethite at $H=4$ across four parameter-matched configurations: transformer-only, manual spectral prior, PCA-curated prior, and a Learning Using Statistical Invariants (LUSI) consistency loss ~\cite{vapnik2020}. 
-These two endmember classes perform well on the held-out validation split: the transformer baseline reaches F1-score $0.93$ for hematite ($N=729$) and $0.92$ for goethite ($N=141$), substantially above the aggregate 95-class top-1 accuracy. 
-The attention patterns show that the model emphasizes several wavelength neighborhoods physically plausible for ferric-mineral discrimination, but the learned peaks are not one-to-one matches to laboratory diagnostic wavelengths.
+These two endmember classes perform well on the held-out validation split: the transformer baseline reaches F1-score $0.93$ for hematite ($N=729$) and $0.92$ for goethite ($N=141$), above the aggregate 95-class top-1 accuracy. 
+The attention patterns show that the model emphasizes several wavelength neighborhoods physically plausible for ferric-mineral discrimination, but the learned peaks are not one-to-one matches to laboratory diagnostic wavelengths, as expected and explained further in the Section~\ref{sec:Discussion}.
 
 \begin{figure}[!htbp]
 \centering
@@ -172,8 +213,6 @@ The forward pass is partitioned into four regions: preprocessing, tokenization, 
 Spectral priors enter through the per-head attention bias $\bm{\beta}_h$; statistical-invariance regularization requires a second (student) forward pass through the network on a transformed input $T_{\text{joint}}(\mathbf{w})$, with the resulting prediction compared against the teacher prediction via a KL consistency loss.}
 \label{fig:architecture}
 \end{figure}
-
-
 
 These attention results should not be read as a complete explanation of the final class decision.
 Hematite and goethite often share the same attended wavelength neighborhoods because both are ferric-iron minerals.
@@ -200,8 +239,16 @@ The full ablation, with train-region (Africa/Middle East) top-1 and top-3 accura
 A non-attention random-forest baseline on the same Group~1 split reaches top-1 accuracy $0.716$ and top-3 accuracy $0.922$, while the unguided $H=4$ transformer reaches $0.789$ top-1 before any physics-informed mechanism is applied.
 Thus, learned cross-attention provides a substantial gain over a conventional non-attention classifier. 
 The architectural prior then improves the low-capacity transformer further: at $H=4$, the manual prior improves top-1 accuracy from $0.789$ to $0.808$, and the PCA-curated prior reaches $0.809$. 
-These gains recover roughly two-thirds of the improvement obtained by doubling head count from $H=4$ to $H=8$ in the transformer-only model ($0.789 \rightarrow 0.819$), with no increase in model width or training time. 
+These gains recover roughly two-thirds of the improvement obtained by doubling head count from $H=4$ to $H=8$ in the transformer-only model ($0.789 \rightarrow 0.819$), with no increase in model width or training time.
 This supports the capacity-efficiency interpretation: spectroscopic initialization helps a smaller transformer use its limited heads more productively.
+The architectural-prior advantage is visible from the very first epoch (Figure~\ref{fig:earlyepoch}): at $H = 4$ the manual prior reaches $0.331$ top-1 after a single epoch versus $0.306$ for the unguided baseline, a $+2.5$~pp head start delivered by spectroscopic initialization alone. The LUSI configurations cluster at the bottom of the early-epoch top-1 ranking, consistent with the in-distribution penalty of statistical-invariance regularization.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{compare_runs_early.png}
+\caption{First-five-epoch convergence trajectories across the ten parameter-matched configurations of Table~\ref{tab:crossscene}. \textbf{Left:} training loss (lower is better). \textbf{Center:} validation top-1. \textbf{Right:} validation top-3. Legend entries list the epoch-1 value and are sorted by epoch-1 validation top-1 (descending), so the early leader sits at the top. Colors are consistent with the full-trajectory view of the same runs. The 8-head configurations (PCA 8H, Trans 8H, Manual 8H, Manual + LUSI 8H) reach the highest epoch-1 top-1 ($\sim 0.34$--$0.36$), while at $H = 4$ the manual prior leads the unguided baseline at epoch 1 by $+2.5$~pp ($0.331$ vs $0.306$) --- the architectural-prior head start before any data-driven learning has had time to discover Fe$^{3+}$-relevant structure independently. The four LUSI configurations cluster near the bottom of the epoch-1 ranking, consistent with the consistency-loss training-cost overhead reducing effective per-epoch learning at saturated capacity.}
+\label{fig:earlyepoch}
+\end{figure}
 
 At $H=8$, the story changes. 
 The transformer-only baseline reaches $0.819$, the PCA-curated prior is essentially tied at $0.818$, and the manual prior falls to $0.806$. 
@@ -226,40 +273,7 @@ The LUSI-inspired consistency loss penalizes prediction drift under two label-pr
 These transformations are not a full atmospheric model and do not assume that TOA reflectance equals surface reflectance.
 They are instead soft invariance predicates in TOA-input space.
 
-\begin{table}[!htbp]
-\centering
-\small
-\caption{Train-region (Africa/Middle East) and cross-region (SW US) accuracy for the locked configurations. Train columns report the held-out validation-pool accuracy on Africa/Middle East pixels. SW columns report the mean accuracy across 20 SW US granules each containing at least $20\%$ Group-1 mineral pixels, under full-granule inference. Pink rows mark the unguided transformer-only baselines at each head count; bold marks the leader within each head-count block on each SW metric. The Manual + LUSI rows report training-region accuracy only; cross-region inference has not yet been run on those checkpoints.}
-\label{tab:crossscene}
-\begin{tabular}{p{0.24\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.13\linewidth}}
-\hline
-\rowcolor[gray]{0.85}
-\textbf{Configuration} & \textbf{Train top-1} & \textbf{SW top-1} & \textbf{Train top-3} & \textbf{SW top-3} \\
-\hline
-\rowcolor{pink!30}
-Trans 4H & 0.789 & 0.669 & 0.961 & 0.877 \\
-\hline
-\textbf{Manual 4H} & 0.808 & \textbf{0.724} & 0.967 & \textbf{0.919} \\
-\hline
-PCA-zabs 4H & 0.809 & 0.644 & 0.967 & 0.868 \\
-\hline
-LUSI 4H & 0.787 & 0.634 & 0.961 & 0.875 \\
-\hline
-Manual + LUSI 4H & 0.795 & -- & 0.962 & -- \\
-\hline
-\rowcolor{pink!30}
-Trans 8H & 0.819 & 0.683 & 0.970 & 0.902 \\
-\hline
-Manual 8H & 0.806 & 0.699 & 0.966 & 0.896 \\
-\hline
-\textbf{PCA-zabs 8H} & 0.818 & \textbf{0.705} & 0.970 & \textbf{0.910} \\
-\hline
-LUSI 8H & 0.796 & 0.666 & 0.962 & 0.893 \\
-\hline
-Manual + LUSI 8H & 0.808 & -- & 0.967 & -- \\
-\hline
-\end{tabular}
-\end{table}
+
 
 Cross-region deployment to a geographically disjoint southwestern US desert region (20 mineral-populated granules) reduces top-1 accuracy by $8$--$17$ percentage points from the training-region validation pool, while top-3 accuracy stays in the $0.87$--$0.92$ range across all configurations (Table~\ref{tab:crossscene}). At $H = 4$ the manual prior leads cross-region (SW top-1 $= 0.724$, $-8.4$~pp drop), $+5.5$~pp above the unguided baseline and $+9.0$~pp above LUSI. At $H = 8$ the PCA-curated prior leads (SW top-1 $= 0.705$, $-11.3$~pp drop), narrowly above Manual 8H ($0.699$) and well above LUSI 8H ($0.666$). The 4H winner is the sharp manual prior; the 8H winner is the diffuse PCA-curated prior.
 
