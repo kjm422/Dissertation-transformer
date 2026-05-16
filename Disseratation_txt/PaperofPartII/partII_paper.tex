@@ -337,7 +337,7 @@ Each band is encoded with its raw reflectance together with first and second fin
 \paragraph{Perceiver: Cross-attention}
 Jaegle et al.\ \cite{jaegle2021perceiver} introduced the Perceiver architecture, which uses a fixed-size set of learned latent queries to cross-attend to a much larger input array. 
 This asymmetric attention pattern avoids computing self-attention over all $L$ input tokens, reducing the input-attention cost from $O(L^2)$ to $O(M \times L)$ for $M \ll L$ latent queries. 
-We adopt this Perceiver-style cross-attention principle for spectral pooling. 
+This Perceiver-style cross-attention principle is adopted here for spectral pooling. 
 
 \paragraph{SpecTf: Per-pixel spectral modeling}
 SpecTf \cite{lee2025spectf} demonstrated that treating imaging-spectrometer measurements as 1-D spectral sequences can support accurate per-pixel cloud detection on EMIT without spatial or temporal context.
@@ -439,7 +439,7 @@ where the $\sqrt{d}$ scaling prevents softmax saturation and the temperature $\t
 \subsection{Classification head}
 \label{sec:classification}
 
-The pooled vector $\mathbf{z}_{\text{cat}}$ is mapped to per-class logits by a two-layer feed-forward network with ReLU activations and dropout $p = 0.1$, compressing the $Hd = 1{,}536$-dimensional multi-head representation to $d = 192$ before producing $Q_1 = 95$ class logits (Figure~\ref{fig:architecture}); the predicted mineral ID $\hat{q}_{1}$ is the argmax over those logits. The softmax distribution $\hat{\mathbf{p}}$ over $Q_1 = 95$ classes is a \emph{model} probability rather than a calibrated estimate of real-world class probabilities; we report top-1 and top-3 retrievals as relative measures and treat any frequentist interpretation as requiring separate calibration.
+The pooled vector $\mathbf{z}_{\text{cat}}$ is mapped to per-class logits by a two-layer feed-forward network with ReLU activations and dropout $p = 0.1$, compressing the $Hd = 1{,}536$-dimensional multi-head representation to $d = 192$ before producing $Q_1 = 95$ class logits (Figure~\ref{fig:architecture}); the predicted mineral ID $\hat{q}_{1}$ is the argmax over those logits. The softmax distribution $\hat{\mathbf{p}}$ over $Q_1 = 95$ classes is a \emph{model} probability rather than a calibrated estimate of real-world class probabilities; top-1 and top-3 retrievals are reported as relative measures, and any frequentist interpretation is treated as requiring separate calibration.
 
 \subsection{Model parameter summary}
 
@@ -497,7 +497,7 @@ Figure~\ref{fig:trans4_attn} compares head-averaged attention $\bar{\mathbf{A}}^
 \end{figure}
 
 \paragraph{Quantitative validation: Spearman rank correlation against per-mineral absorption depth.}
-For each mineral $c$ and configuration, we compute Spearman rank correlation between the attention vector and the absorption depth $1 - \mathbf{w}_{\text{ref}}^{(c)}$ derived from the corresponding USGS reference spectrum. The metric tests whether the model's attention magnitudes rank wavelengths in the same order as the mineral's actual absorption pattern. Three patterns emerge:
+For each mineral $c$ and configuration, Spearman rank correlation is computed between the attention vector and the absorption depth $1 - \mathbf{w}_{\text{ref}}^{(c)}$ derived from the corresponding USGS reference spectrum. The metric tests whether the model's attention magnitudes rank wavelengths in the same order as the mineral's actual absorption pattern. Three patterns emerge:
 
 \emph{Architectural priors achieve statistically significant per-mineral alignment.}
 PCA-manual reaches head-averaged $\rho = 0.238$ ($p < 10^{-3}$) for hematite and $\rho = 0.202$ ($p < 10^{-2}$) for goethite; PCA-curated reaches $\rho = 0.216$ and $\rho = 0.170$ respectively, with similar significance. Per-head, the alignments are sharper still: \emph{PCA-manual Head~1 reaches $\rho = 0.389$ ($p < 10^{-8}$) on hematite}, with top peaks at 530/544/559~nm and 873~nm matching the canonical 535~nm visible charge-transfer and 860~nm NIR crystal-field, and \emph{PCA-manual Head~0 reaches $\rho = 0.394$ ($p < 10^{-7}$) on goethite}, with top peaks at 470/485 nm and 902~nm matching the canonical 480~nm charge-transfer and 920~nm crystal-field. These two cells are direct quantitative evidence that the manual prior delivers what its construction promises: pinning attention onto the literature wavelengths for the specific mineral being classified.
