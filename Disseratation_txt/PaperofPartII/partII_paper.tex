@@ -141,6 +141,13 @@ Whether such cases represent genuine improvements over the SDS labels or they ar
 \label{fig:data_levels}
 \end{figure}
 
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\textwidth]{posthoc_workflow.png}
+\caption{Three-step deployment workflow for post-hoc direct retrieval. \textbf{(1)~Initial SDS processing:} a small representative subset of early-mission EMIT granules is processed through the operational science data system to produce L1B--L2B training pairs. \textbf{(2)~Train on L1/L2 data pairs:} a cross-attention transformer is trained on the paired data, with optional physics-infusion mechanisms (spectroscopic priors, LUSI-like consistency loss). \textbf{(3)~Direct mineral prediction:} new granules are mapped to per-pixel mineral labels in a single forward pass at deployment time, without invoking the radiative-transfer model or the spectral-library matching stage.}
+\label{fig:posthoc_workflow}
+\end{figure}
+
 \subsection{Problem statement and contributions}
 \label{subsec:contributions}
 
@@ -574,7 +581,7 @@ Multiple bumps assigned to the same head are summed; bump amplitudes falling wit
 Bands are distributed across the $H$ heads using one of three policies.
 The default \emph{round-robin} policy cycles bands across heads in order, so that with $H = 4$ heads and the default 5-band Fe$^{3+}$ list (480, 535, 670, 860, 920~nm from Table~\ref{tab:fe_diagnostics}), head~0 receives bumps at 480 and 920~nm (goethite charge-transfer and crystal-field NIR), head~1 at 535~nm (hematite charge-transfer), head~2 at 670~nm (shared Fe$^{3+}$ crystal-field), and head~3 at 860~nm (hematite crystal-field NIR).
 Each head's bump pattern is independently normalized so that the peak amplitude equals one, after which the resulting profile is scaled by the prior strength $\alpha$ before being copied into $\bm{\beta}_h$.
-With $\alpha = 0.5$ the peak attention-logit bias contributed by the prior is $+0.5$ at each head's assigned diagnostic wavelength and zero elsewhere --- a deliberately gentle nudge rather than a hard constraint.
+With the locked value $\alpha = 1.0$ the peak attention-logit bias contributed by the prior is $+1.0$ at each head's assigned diagnostic wavelength and zero elsewhere --- a deliberately gentle nudge rather than a hard constraint.
 
 The manual mode trades the direct statistical use of the reference library for a literature-distilled, hand-audited band list: every band-to-head assignment is explicit and traceable to a published diagnostic wavelength, and no intermediate preprocessing (sanitization, continuum removal, eigendecomposition) sits between the canonical wavelengths and the attention bias copied into the model.
 It serves both as a deployable prior in its own right --- particularly when the target mineral set is well-characterized in the spectroscopic literature but the available laboratory library is incomplete or noisy --- and as an interpretability baseline against which the PCA-derived prior of Section~\ref{sec:pca_priors} can be compared.
@@ -735,26 +742,35 @@ Cross-region deployment to a geographically disjoint southwestern US desert regi
 \begin{table}[!htbp]
 \centering
 \small
-\caption{Cross-region deployment. Train columns report the held-out validation-pool accuracy from Table~\ref{tab:ablation} on Africa/Middle East pixels. SW columns report the mean accuracy across 20 SW US granules each containing at least $20\%$ Group-1 mineral pixels, under full-granule inference. Bold marks the leader within each head-count block on each SW metric.}
+\caption{In-region validation and cross-region full-granule accuracy for locked configurations.
+Validation columns report held-out Africa/Middle East pixel accuracy.
+SW US columns report mean accuracy across 20 southwestern US granules (each containing at least $20\%$ Group~1 mineral pixels).
+Shaded rows are unguided transformer-only baselines at each head count; bold values mark the leader within each head-count block for each SW US metric.}
 \label{tab:crossscene}
-\begin{tabular}{p{0.24\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.13\linewidth}}
+\begin{tabular}{p{0.2\linewidth}p{0.13\linewidth}p{0.15\linewidth}p{0.13\linewidth}p{0.15\linewidth}}
 \hline
 \rowcolor[gray]{0.85}
-\textbf{Configuration} & \textbf{Train top-1} & \textbf{SW top-1} & \textbf{Train top-3} & \textbf{SW top-3} \\
+\textbf{Configuration} & \textbf{Validation Set Top-1} & \textbf{SW US Top-1} & \textbf{Validation Set Top-3} & \textbf{SW US Top-3} \\
 \hline
+\rowcolor{pink!30}
 Trans 4H & 0.789 & 0.669 & 0.961 & 0.877 \\
 \hline
 \textbf{Manual 4H} & 0.808 & \textbf{0.724} & 0.967 & \textbf{0.919} \\
 \hline
-PCA-zabs 4H & 0.809 & 0.644 & 0.967 & 0.868 \\
+PCA 4H & 0.809 & 0.644 & 0.967 & 0.868 \\
+\hline
+Manual + LUSI 4H & 0.795 & 0.667 & 0.962 & 0.885 \\
 \hline
 LUSI 4H & 0.787 & 0.634 & 0.961 & 0.875 \\
 \hline
+\rowcolor{pink!30}
 Trans 8H & 0.819 & 0.683 & 0.970 & 0.902 \\
 \hline
-Manual 8H & 0.806 & 0.699 & 0.966 & 0.896 \\
+\textbf{PCA 8H} & 0.818 & \textbf{0.705} & 0.970 & \textbf{0.910} \\
 \hline
-\textbf{PCA-zabs 8H} & 0.818 & \textbf{0.705} & 0.970 & \textbf{0.910} \\
+Manual + LUSI 8H & 0.808 & 0.688 & 0.967 & 0.900 \\
+\hline
+Manual 8H & 0.806 & 0.699 & 0.966 & 0.896 \\
 \hline
 LUSI 8H & 0.796 & 0.666 & 0.962 & 0.893 \\
 \hline
@@ -876,8 +892,109 @@ Across the three deployment-realistic granules (Images~4, 50, 100), the mean top
 
 Cross-region granule deployment is reported in Table~\ref{tab:crossscene} across 20 mineral-populated SW US granules (each with $\geq 20\%$ Group-1 mineral pixels). The cross-region winning configuration is head-count-dependent: at $H = 4$ the sharp manual prior leads (SW top-1 $= 0.724$), while at $H = 8$ the diffuse PCA-curated prior leads (SW top-1 $= 0.705$). The reversal mirrors the in-distribution sharp-vs-diffuse pattern of Table~\ref{tab:ablation}: narrow Gaussian bumps over-constrain attention at saturated capacity, while PCA-curated's diffuse loadings ($\sim$$220$ of $285$ bands) anchor better when more heads are available. LUSI is last or next-to-last on both top-1 and top-3 at both head counts, providing no consistent cross-region advantage.
 
+\section{Comparison with a non-attention random-forest baseline}
+\label{sec:rf_baseline_comparison}
+
+Random forest classifiers are widely used for hyperspectral pixel classification~\cite{wang2022hyspex} and frequently appear as a baseline in transformer-based comparison studies~\cite{hong2021spectralformer}, providing a natural reference point for asking whether the cross-attention transformer's added architectural complexity translates into measurable accuracy gains over a classical model that treats each spectral band independently. A 500-tree random forest with $\sqrt{L} \approx 17$ random features per split, \texttt{min\_samples\_split = 10}, and \texttt{min\_samples\_leaf = 4} was trained on the identical $\sim$$1.03$~million-pixel training split (Section~\ref{sec:training_data}). The trained classifier was then evaluated at three deployment scales matching the transformer evaluation: held-out pixel-level validation pool (Section~\ref{sec:trans_only_results}), full-granule inference on three representative Africa/Middle East granules (Section~\ref{sec:full_image_inference}), and cross-region deployment on 20 SW US granules (Table~\ref{tab:crossscene}).
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Random-forest baseline vs.\ cross-attention transformer configurations at three deployment scales. Transformer ranges span the eight Trans/Manual/PCA-zabs/LUSI configurations at $H = 4$ and $H = 8$ from Tables~\ref{tab:ablation} and~\ref{tab:crossscene}. Per-granule inference time is wall-clock on a single Apple M4 Max laptop.}
+\label{tab:rf_compare}
+\begin{tabular}{p{0.42\linewidth}p{0.18\linewidth}p{0.28\linewidth}}
+\hline
+\rowcolor[gray]{0.85}
+\textbf{Metric} & \textbf{RF} & \textbf{Transformer range} \\
+\hline
+In-distribution validation top-1 (pixel)         & $0.716$        & $0.789$--$0.819$ \\
+\hline
+In-distribution validation top-3 (pixel)         & $0.922$        & $0.961$--$0.970$ \\
+\hline
+Granule top-1 (Africa, mean of 3 granules)       & $0.769$        & $0.874$--$0.892$ \\
+\hline
+Granule top-1 (SW US, mean of 20 granules)       & $0.561$        & $0.634$--$0.724$ \\
+\hline
+Granule SW US top-3                              & $0.799$        & $0.875$--$0.919$ \\
+\hline
+Granule SW US macro recall                       & $0.091$        & $0.171$--$0.207$ \\
+\hline
+Inference time per granule                       & $\sim$$105$~s  & $\sim$$45$~s     \\
+\hline
+\end{tabular}
+\end{table}
+
+The accuracy gap between the random forest and the transformer configurations is present at pixel level ($-7.3$ to $-10.3$~pp top-1) and widens with deployment scale: to $\sim$$10$--$12$~pp at Africa granule scale and to $7$--$16$~pp at SW US cross-region scale. The top-3 gap is the smallest at granule scale (RF $= 0.976$ vs transformer $0.996$--$0.998$, only $\sim$$2$~pp), indicating that the random forest knows the correct mineral is in its top three predictions almost as often as the transformer does. The top-3 gap widens again under cross-region deployment (RF $= 0.799$ vs transformer $0.875$--$0.919$).
+
+The most striking gap is macro recall on SW US, where RF reaches $0.091$, less than half of every transformer configuration ($\geq 0.171$). This is consistent with RF's tree splits each thresholding a single spectral band at a time, in contrast to cross-attention's softmax weighting across all $285$ bands jointly: rare-mineral discrimination often depends on the joint shape of multiple bands (a derivative-spectrum minimum at one wavelength relative to a continuum elsewhere, or a band-ratio between two diagnostic regions), and a per-band classifier cannot directly represent such cross-band features. The result is a model that has learned per-band thresholds well enough to land the correct answer in the top three nearly $80\%$ of the time even cross-region, but cannot recover the rare Group~1 classes that the cross-attention transformer captures jointly across wavelengths.
+
+RF inference on a single $1.6$-million-pixel granule takes $\sim$$105$~seconds on the same Apple M4 Max laptop used for the transformer runs, $\sim$$2.3\times$ slower per granule than the transformer's $\sim$$45$~seconds, despite a substantially lower one-time training cost ($\sim$$22$~minutes for RF versus $117$--$326$~minutes for the transformer configurations). At deployment scale --- where the trained model is repeatedly applied across many granules --- the transformer's per-granule inference advantage compounds; the higher upfront training cost is amortized across the larger granule volume the model is asked to classify after training.
+
 \section{Discussion and conclusions}
 \label{sec:conclusions}
+
+The central result of this work is not that every physics-informed intervention improves every metric.
+The experiments show that cross-attention architectures provide a controlled way to test \emph{how} physical knowledge enters a learned remote-sensing surrogate --- whether through structured initialization of an explicit attention bias (spectroscopic priors) or through label-preserving augmentations enforced by a consistency loss (LUSI-like regularization) --- and reveal under what conditions that knowledge helps, is neutral, or actively constrains the model.
+
+\paragraph{What the attention analysis does and does not explain.}
+The attention maps provide spectroscopic evidence that the model emphasizes wavelength regions consistent with iron-oxide discrimination, including visible Fe$^{3+}$ charge-transfer structure and VNIR crystal-field regions.
+However, attention weights are not causal explanations by themselves.
+They indicate \emph{where} each learned query samples the spectrum, while the final class decision also depends on the value vectors $\mathbf{V}_j$, which encode reflectance magnitude, local derivative structure, and band-position information.
+This distinction is particularly important for hematite and goethite, whose diagnostic features overlap substantially: both minerals share attention peaks, which is not a failure of discrimination but a reflection of shared ferric-iron spectral structure.
+The mineral-specific decision is made downstream by the classifier head using the content pooled from those regions.
+Thus, the appropriate interpretive claim is that the learned representation is \emph{consistent with} known spectroscopy, not that attention alone recovers the full physical retrieval logic.
+
+\paragraph{Statistical-invariance regularization reveals a robustness tradeoff.}
+The LUSI-inspired consistency loss was designed to encourage stability under illumination scaling and smooth spectral-slope perturbations, both acknowledged sources of label-quality degradation in the operational EMIT pipeline~\cite{emit_l2a_atbd, emit_l2b_atbd}.
+The physical motivation comes from the first-order radiative-transfer decomposition linking TOA reflectance to surface reflectance (Equation~\ref{eq:toa_decomp}): the two LUSI predicates approximate label-preserving directions in TOA-input space derived from this decomposition --- the multiplicative scale perturbation approximates broadband changes in $T_{\downarrow}T_{\uparrow}$, and the smooth additive spectral-slope perturbation approximates a low-order change in $\rho_{\mathrm{path}}$.
+The implementation diverges from Vapnik and Izmailov's original LUSI formulation~\cite{vapnik2020}, in which predicates and statistical invariants enter as \emph{hard constraints} on the admissible function class via minimization of a constrained functional in a Reproducing Kernel Hilbert Space (RKHS).
+The neural training setting does not easily admit such hard constraints, so the predicates here enter softly, as a teacher--student consistency loss between predictions on the original and perturbed spectra.
+The empirical results show that this soft approximation does not improve in-distribution top-1 accuracy and concentrates its benefit in rare-class macro recall on out-of-distribution scenes (Section~\ref{sec:cross_region}): at $H = 4$, LUSI exceeds the unguided baseline's macro recall on $19$ of $20$ SW US granules, even while losing to both Trans 4H and Manual 4H on top-1.
+Exploring the formal hard-constraint implementation is a natural next step (Section~\ref{sec:future_work}) that may either widen the macro-recall gain or eliminate the in-distribution accuracy cost.
+
+\paragraph{Spectral priors and the LUSI-inspired loss do not stack additively.}
+At $H = 4$, combining either spectral prior with the LUSI-inspired loss is consistently worse than the prior alone on every metric: PCA-curated + LUSI reaches top-1 $0.790$ ($-1.9$~pp vs PCA-curated alone), and Manual + LUSI reaches $0.795$ ($-1.3$~pp vs Manual alone).
+At $H = 8$ the conflict softens to neutrality.
+The two mechanisms target different performance axes: spectral priors improve in-distribution accuracy, interpretability, and rare-class capture (especially at constrained capacity), whereas the LUSI-inspired loss's effect is concentrated in rare-class macro recall on out-of-distribution scenes.
+The bias-amplitude diagnostics suggest that the consistency loss uses the trainable attention bias as a buffer between augmented and unaugmented passes, distorting the structured spectral initialization.
+
+\paragraph{Post-hoc direct retrieval as a reliable operational surrogate.}
+The proposed model should be understood as a post-hoc direct retrieval surrogate for the operational L1B-to-mineral-product mapping, not as an independent physical retrieval of surface mineralogy.
+Its labels are inherited from the EMIT science data system, and its accuracy is therefore bounded by the quality, thresholds, and assumptions of the upstream atmospheric-correction and spectral-matching pipeline rather than by any independent ground truth.
+Within that scope, the operational advantage is substantial: once trained, the model maps TOA reflectance to mineral labels using a single forward pass and does not invoke an RTM at inference time.
+Full-granule experiments show that this inference can be performed on commodity Apple Silicon hardware in approximately $45$~seconds per $1.6$-million-pixel granule (Section~\ref{sec:full_image_inference}), and $\sim$$2.3\times$ faster than the random-forest baseline at the same scale (Section~\ref{sec:rf_baseline_comparison}).
+A fast surrogate supports rapid ground screening, onboard event detection, downlink prioritization, or exploratory analyses in which approximate mineral labels are useful before validated products are available.
+
+\paragraph{Conditions for transfer beyond EMIT.}
+The framework is transferable in structure, not in its specific spectral content: for another sensor, mineral group, or physical-science application, the diagnostic wavelengths, prior construction, and label-preserving transformations would have to be rebuilt from the relevant physics.
+What transfers is the recipe --- identify a feature axis with physical meaning, encode prior knowledge as a weak learnable bias over that axis, and evaluate whether loss-based invariances improve robustness to known label-preserving transformations.
+In hyperspectral remote sensing, the feature axis is wavelength and the priors come from spectroscopy; in other domains, the analogous axis might be time, frequency, spatial scale, molecular position, or graph connectivity.
+This makes the approach most appropriate for problems where labels are expensive (because they are generated by an upstream physical model or expert pipeline) and where domain knowledge specifies diagnostic input regions or label-preserving transformations.
+
+\paragraph{Limitations.}
+Several limitations bound the present results.
+First, the labels are operational SDS mineral-product labels rather than independent field-validated mineral truth, so the model may inherit that pipeline's biases.
+Second, the main ablation results are single-seed runs at one training-set scale and on a single cross-region deployment set (southwestern US); additional seeds, training-size sweeps, and deployment regions are needed to quantify statistical variability and broader spatial generalization.
+Third, attention maps and softmax outputs are diagnostic rather than causal or calibrated; ablation/counterfactual tests and post-hoc calibration would be needed to prove that specific bands drive individual decisions and to support probabilistic deployment.
+Fourth, the LUSI-inspired perturbations capture only low-order label-preserving effects (multiplicative brightness, smooth slope) and do not represent the full atmospheric radiative-transfer process.
+
+\subsection{Future work}
+\label{sec:future_work}
+
+The next step is to convert the surrogate from a promising research model into a validated operational aid.
+This requires independent validation against field- or laboratory-confirmed mineral targets, cross-sensor testing on missions such as PRISMA, EnMAP, SBG, or CHIME, and systematic evaluation across aerosol optical depth, water-vapor burden, solar/view geometry, and surface-brightness regimes.
+
+A second direction is causal interpretability of the attention patterns: band-masking, counterfactual spectral editing, and attention-bias intervention experiments could determine whether the wavelengths highlighted by attention are \emph{necessary} for correct classification, moving the attention story from \emph{consistent with} known spectroscopy to a stronger causal claim.
+
+A third direction is uncertainty quantification, including temperature scaling, conformal prediction, ensembles, and post-hoc calibration against operational confidence measures.
+Since the softmax outputs are model probabilities rather than calibrated posterior probabilities, deployment would require calibration or uncertainty quantification to identify when the surrogate should defer to the operational pipeline.
+
+A fourth direction is adaptive physics infusion: instead of fixing manual or PCA priors at training, the model could learn when to trust, attenuate, or override a prior based on scene conditions (e.g., AOD-conditioned prior strength, or per-pixel prior gating).
+
+A fifth direction is to explore the formal LUSI implementation as a constrained functional on a Reproducing Kernel Hilbert Space (RKHS), or other constrained-optimization approximations that more faithfully realize Vapnik and Izmailov's hard-constraint setup~\cite{vapnik2020}.
+Given that even the soft consistency-loss approximation used here exposes a measurable robustness-vs-accuracy axis at the $\sim$$1.26$-million-pixel training scale, the formal implementation may either widen the macro-recall gain on cross-region deployment or eliminate the in-distribution accuracy cost.
+
+Finally, onboard or near-realtime deployment studies should evaluate not only inference speed but also memory footprint, radiation-tolerant compute constraints, downlink prioritization value, and failure-detection logic for when the surrogate should defer to full ground processing.
 
 %% ====================================================================
 %% REFERENCES

@@ -48,12 +48,12 @@
 \node[linear, right=6mm of K] (V) {$\mathbf{V} = \mathbf{E}\mathbf{W}_V$};
 
 % --- Cross-attention pipeline ---
-\node[attn, above=16mm of E]        (score) {Score: $\mathbf{K}\mathbf{q}_h/\sqrt{d}\ +\ \bm{\beta}_h$};
+\node[attn, above=16mm of E]        (score) {AttnScore: $\mathbf{s}_h = \mathbf{K}\mathbf{q}_h/\sqrt{d}\ +\ \bm{\beta}_h$};
 \node[queryv, right=20mm of score]      (q) {Learned queries\\ $\mathbf{q}_1,\ldots,\mathbf{q}_H$};
 \node[bias,  left=17mm of score]    (beta)  {$\bm{\beta}_h$ (spectral priors)};
 
-\node[softmax, above=of score]      (sm)    {Softmax / $\tau_a$};
-\node[attn, above=of sm]            (A)     {Attention weights $\mathbf{A}_h \in \R^L$};
+\node[softmax, above=of score]      (sm)    {Softmax($\mathbf{s}_h / \tau_a$)};
+\node[attn, above=of sm]            (A)     {Attn weights: $\mathbf{A}_h \in \R^L$};
 \node[attn, above=of A]             (pool)  {Pool: $\mathbf{z}_h = \mathbf{V}^\top \mathbf{A}_h$};
 
 % --- Head concat + classifier ---
@@ -69,7 +69,7 @@
 
 % --- Losses ---
 \node[loss, above=5mm of out]            (ce)   {$\mathcal{L}_{\text{CE}}$ (cross-entropy)};
-\node[loss, fill=yellow!45, above=5mm of ce]  (total){$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \lambda_{\text{LUSI}}\,\mathcal{L}_{\text{LUSI}}$};
+\node[loss, fill=yellow!45, above=5mm of ce]  (total){$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \lambda_{\text{LUSI}}\,\mathcal{L}_{\text{KL}}$};
 
 % --- LUSI branch (optional, dashed) ---
 \node[lusi,  right=10mm and 20mmof spec]    (T)    {LUSI: $T_{\text{joint}}(\mathbf{w})$};
@@ -77,7 +77,7 @@
       at ($(T.north east) + (-35mm, 1mm)$)
       (Tdetail)
       {$T_{\text{joint}}(\mathbf{w}) = \rho \mathbf{w} + \xi \bm{\lambda}_{\text{grid}}$};
-\node[lusi,  right=42mm of out]     (kl)   {$\mathcal{L}_{\text{LUSI}} = D_{\text{KL}}(\cdot \| \cdot)$};
+\node[lusi,  right=42mm of out]     (kl)   {$\mathcal{L}_{\text{KL}} = D_{\text{KL}}(\mathbf{p}_{\text{orig}}^{\,\mathrm{sg}} \,\|\, \mathbf{p}_{\text{trans}})$};
 
 % --- Main arrows ---
 \draw[arrow] (spec) -- (norm);   \draw[arrow] (norm) -- (uj);

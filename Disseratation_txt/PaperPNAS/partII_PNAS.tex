@@ -13,8 +13,9 @@
 % Path setup:
 %   \graphicspath points to ../Dissertation_images/ (shared with paper +
 %     dissertation; figures already exist for Fig 1 and Fig 2).
-%   \bibliography points to ../PaperofPartII/references (avoids divergence;
-%     copy references.bib here later if PNAS requires self-contained submit).
+%   \bibliography is local (references.bib in this folder) so the project
+%     builds standalone on Overleaf where ../ does not resolve. Keep this
+%     copy in sync with ../PaperofPartII/references.bib after bib edits.
 % ============================================================================
 
 \documentclass[11pt]{article}
@@ -103,20 +104,13 @@ Beyond the per-pixel computational cost, the staged architecture imposes operati
 EMIT mineral products are delivered with a two-month median latency from acquisition \cite{emit_l2b_atbd}, reflecting downlink, ingest, queueing, atmospheric correction, mineral matching, quality control, and archive production.
 For petabyte-scale missions or time-sensitive applications such as volcanic-ash mapping, post-fire debris characterization, and dust-storm response, this operational delivery cycle becomes a constraint and burden separate from the cost of per-pixel computation.
 
-This paper proposes an alternative paradigm: \emph{post-hoc direct retrieval with physics-informed supervision} (Figure~\ref{fig:data_levels}).
+This paper proposes an alternative paradigm: \emph{post-hoc direct retrieval with physics-informed supervision} (Figure~\ref{fig:posthoc_workflow}, Discussion).
 Rather than executing the RTM-based atmospheric-correction and spectral-matching chain at inference time, a learned model is trained on a comparatively small set of previously processed L1B--L2B pairs and then used as a low-latency surrogate for the operational L1B-to-mineral ID mapping.
-The model does not produce an atmospherically corrected reflectance product, nor does it claim independent mineral truth; 
+Recent work shows that a pure 1D spectral sequence model, treating each pixel as a wavelength-indexed sequence without spatial context, is sufficient to reach state-of-the-art accuracy on EMIT classification tasks~\cite{lee2025spectf}, supporting the per-pixel formulation adopted here.
+The model does not produce an atmospherically corrected reflectance product, nor does it claim independent mineral truth;
 its supervision is inherited from the operational science-data-system labels.
 Its value is instead operational and methodological: after the one-time training cost, inference requires only a single forward pass from top-of-atmosphere (TOA) reflectance to mineral class.
 This enables fast screening or mineral-label prediction without invoking the RTM during deployment.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\textwidth]{Data_level_depiction.png}
-\caption{EMIT Science Data System (SDS) processing chain with the proposed post-hoc direct retrieval callout. The SDS performs per-pixel atmospheric correction (L1B$\to$L2A via ISOFIT optimal estimation and sRTMnet) followed by per-pixel spectral-library matching (L2A$\to$L2B via Tetracorder); 
-the proposed approach maps L1B TOA reflectance directly to a mineral-class probability distribution in a single forward pass, after a one-time training cost on operational L1B--L2B pairs.}
-\label{fig:data_levels}
-\end{figure}
 
 This direct TOA formulation is challenging because the model must infer mineralogical structure from spectra in which the surface signal is mixed with atmospheric scattering, absorption, transmission, illumination geometry, and sensor effects.
 A purely data-driven model may learn useful spectral structure, but it may also exploit scene-specific shortcuts that do not transfer across regions.
@@ -141,12 +135,15 @@ Together, these results position physics-informed spectral transformers as a pra
 % ============================================================================
 \section{Results}
 
-Four- and eight-head transformer baselines were trained on 1.26~million class-capped TOA pixels from 396 EMIT granules collected over Africa and the Middle East. 
-The transformer-only baselines used derivative tokenization, learned query vectors, and zero-initialized trainable attention biases, but no spectroscopic prior and no statistical-invariance regularization. 
-Two physics-injection mechanisms against these baselines: 
-(1) spectroscopic priors, implemented as per-head attention-bias initialization from either diagnostic wavelengths or USGS reference spectra, and 
-(2) statistical-invariance regularization, implemented as a consistency loss under label-preserving illumination and spectral-slope perturbations. 
-Combined prior-plus-regularization models were trained to test whether the mechanisms stack or interfere.
+Four- and eight-head transformer baselines were trained on 1.26~million class-capped TOA pixels from 396 EMIT granules collected over Africa and the Middle East.
+The transformer-only baselines used derivative tokenization, learned query vectors, and zero-initialized trainable attention biases, but no spectroscopic prior and no statistical-invariance regularization.
+Two physics-injection mechanisms were evaluated against these baselines:
+(1) spectroscopic priors, implemented as per-head attention-bias initialization from either diagnostic wavelengths or USGS reference spectra, and
+(2) statistical-invariance regularization, implemented as a consistency loss under label-preserving illumination and spectral-slope perturbations.
+Combined prior-plus-regularization configurations were trained at $H = 4$ and $H = 8$ to test whether the mechanisms stack or interfere.
+Each configuration was evaluated on a held-out Africa/Middle East validation pixel pool, 3 full in-region granules ($\sim$1.5M pixels each) and on 20 cross-region granules from a geographically disjoint southwestern US (SW US) desert region, to assess generalization beyond the training distribution.
+Top-1 accuracy is the fraction of mineral pixels whose ground-truth label matches the model's top prediction;
+Top-3 accuracy is the fraction whose ground-truth label appears in the top three.
 
 \begin{table}[!htbp]
 \centering
@@ -168,153 +165,131 @@ Trans 4H & 0.789 & 0.669 & 0.961 & 0.877 \\
 \hline
 PCA 4H & 0.809 & 0.644 & 0.967 & 0.868 \\
 \hline
-LUSI 4H & 0.787 & 0.634 & 0.961 & 0.875 \\
+Manual + LUSI 4H & 0.795 & 0.667 & 0.962 & 0.885 \\
 \hline
-Manual + LUSI 4H & 0.795 & -- & 0.962 & -- \\
+LUSI 4H & 0.787 & 0.634 & 0.961 & 0.875 \\
 \hline
 \rowcolor{pink!30}
 Trans 8H & 0.819 & 0.683 & 0.970 & 0.902 \\
 \hline
-Manual 8H & 0.806 & 0.699 & 0.966 & 0.896 \\
-\hline
 \textbf{PCA 8H} & 0.818 & \textbf{0.705} & 0.970 & \textbf{0.910} \\
+\hline
+Manual + LUSI 8H & 0.808 & 0.688 & 0.967 & 0.900 \\
+\hline
+Manual 8H & 0.806 & 0.699 & 0.966 & 0.896 \\
 \hline
 LUSI 8H & 0.796 & 0.666 & 0.962 & 0.893 \\
 \hline
-Manual + LUSI 8H & 0.808 & -- & 0.967 & -- \\
-\hline
+
 \end{tabular}
 \end{table}
 
-\subsection{Cross-attention transformer learns spectral structure from TOA reflectance}
+\paragraph{Spectral priors lift accuracy at constrained capacity but not at saturated capacity.}
+At $H = 4$, only four learned query vectors compete to cover the 285-band spectrum.
+The unguided transformer reaches $0.789$ top-1; the manual and PCA-curated priors raise this to $0.808$ and $0.809$ ($+1.9$ / $+2.0$~pp).
+At $H = 8$, the unguided transformer reaches $0.819$ on its own, a $+3.0$~pp gain from the doubled attention capacity, while the manual prior falls to $0.806$ ($-1.3$~pp below the 8H baseline) and the PCA-curated prior ties the baseline at $0.818$.
+The pattern is a \emph{capacity-saturation} effect: a 4-head model has too few heads to find the diagnostic Fe$^{3+}$ structure on its own and benefits from a spectroscopic head-start; an 8-head model has enough heads to discover comparable structure unaided.
 
-A cross-attention transformer with $H$ learned query vectors that probe an $L=285$-band spectral token sequence. 
-Each head produces a per-pixel attention vector, $\mathbf{A}_h \in \R^L$.
-Figure~\ref{fig:trans4_attn} compares class-conditional mean attention for hematite and goethite at $H=4$ across four parameter-matched configurations: transformer-only, manual spectral prior, PCA-curated prior, and a Learning Using Statistical Invariants (LUSI) consistency loss ~\cite{vapnik2020}. 
-These two endmember classes perform well on the held-out validation split: the transformer baseline reaches F1-score $0.93$ for hematite ($N=729$) and $0.92$ for goethite ($N=141$), above the aggregate 95-class top-1 accuracy. 
-The attention patterns show that the model emphasizes several wavelength neighborhoods physically plausible for ferric-mineral discrimination, but the learned peaks are not one-to-one matches to laboratory diagnostic wavelengths, as expected and explained further in the Section~\ref{sec:Discussion}.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\linewidth]{attention_headavg_compare4h.png}
-\caption{Head-averaged class-conditional mean attention, $\bar{\mathbf{A}}^{(c)} \in \R^{285}$ for hematite (top) and goethite (bottom) at $H=4$. 
-Curves compare the transformer baseline, manual Fe$^{3+}$ prior, PCA-curated prior, and LUSI configuration. 
-Vertical dashed lines mark literature Fe$^{3+}$ diagnostic wavelengths for each mineral; light gray spans show H$_2$O atmospheric masks. 
-The manual prior concentrates attention near canonical visible and VNIR ferric-iron regions, while the PCA-curated prior distributes attention over broader Fe-sensitive neighborhoods. 
-The unguided transformer and LUSI configurations retain substantial attention at non-canonical wavelengths.}
-\label{fig:trans4_attn}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\linewidth]{architecture.pdf}
-\caption{End-to-end architecture overview. 
-The forward pass is partitioned into four regions: preprocessing, tokenization, attention pooling, and classification. 
-Spectral priors enter through the per-head attention bias $\bm{\beta}_h$; statistical-invariance regularization requires a second (student) forward pass through the network on a transformed input $T_{\text{joint}}(\mathbf{w})$, with the resulting prediction compared against the teacher prediction via a KL consistency loss.}
-\label{fig:architecture}
-\end{figure}
-
-These attention results should not be read as a complete explanation of the final class decision.
-Hematite and goethite often share the same attended wavelength neighborhoods because both are ferric-iron minerals.
-Discrimination also depends on the value vectors $\mathbf{V} = \mathbf{E}\mathbf{W}_V$, which are learned linear projections of the token embeddings $\mathbf{E}$ (Fig.~\ref{fig:architecture}).
-Each token combines normalized TOA reflectance with its first and second derivatives and a positional code, so the value vectors carry local slope and curvature information in addition to band magnitude.
-Thus, attention identifies \emph{where} the model samples spectral evidence, while the downstream classifier separates minerals using both attention magnitudes and the wavelength-dependent content being pooled.
-
-\subsection{Physics injection trades capacity, interpretability, and robustness}
-
-\subsubsection{Spectral attention priors improve capacity efficiency at low head count}
-
-Quantitative alignment between attention and USGS absorption-depth profiles supports the same interpretation.
-At $H=4$, the manual and PCA-curated priors produce statistically significant head-averaged Spearman correlation with hematite and goethite absorption depth ($\rho \approx 0.17$--$0.24$), with per-head correlations reaching $\rho \approx 0.39$ ($p<10^{-7}$) where the prior anchors attention near canonical Fe$^{3+}$ regions.
-The unguided $H=4$ transformer and LUSI-only configurations show no significant alignment, but at $H=8$ the unguided transformer rediscovers Fe$^{3+}$-consistent structure ($\rho=0.32$, $p<10^{-6}$), indicating that sufficient attention capacity recovers spectroscopic alignment without explicit initialization..
-
-The attention bias $\bm{\beta}_h$ provides an explicit interface for architectural physics injection. 
-Two spectroscopic initializations were evaluated. 
-The manual prior places weak Gaussian bumps at literature Fe$^{3+}$ diagnostic wavelengths (480, 535, 670, 860, and 920~nm). 
-The PCA-curated prior uses z-scored absolute principal-component loadings from a curated subset of EMIT-resampled USGS spectra, producing a broader reference-library variance prior over ferric-mineral spectral structure. 
-In all main ablations, the transformer baseline uses the same trainable attention-bias parameters initialized at zero, so improvements from the prior-bearing models are attributable to initialization rather than extra model capacity.
-
-The full ablation, with train-region (Africa/Middle East) top-1 and top-3 accuracies for every configuration, is consolidated alongside the cross-region results in Table~\ref{tab:crossscene}. Training plus validation took 117--326 minutes per configuration on a single Apple M4 Max laptop using PyTorch MPS; LUSI configurations approximately double the wall-clock cost of non-LUSI ones because each training step performs an additional augmented forward pass.
-
-A non-attention random-forest baseline on the same Group~1 split reaches top-1 accuracy $0.716$ and top-3 accuracy $0.922$, while the unguided $H=4$ transformer reaches $0.789$ top-1 before any physics-informed mechanism is applied.
-Thus, learned cross-attention provides a substantial gain over a conventional non-attention classifier. 
-The architectural prior then improves the low-capacity transformer further: at $H=4$, the manual prior improves top-1 accuracy from $0.789$ to $0.808$, and the PCA-curated prior reaches $0.809$. 
-These gains recover roughly two-thirds of the improvement obtained by doubling head count from $H=4$ to $H=8$ in the transformer-only model ($0.789 \rightarrow 0.819$), with no increase in model width or training time.
-This supports the capacity-efficiency interpretation: spectroscopic initialization helps a smaller transformer use its limited heads more productively.
-The architectural-prior advantage is visible from the very first epoch (Figure~\ref{fig:earlyepoch}): at $H = 4$ the manual prior reaches $0.331$ top-1 after a single epoch versus $0.306$ for the unguided baseline, a $+2.5$~pp head start delivered by spectroscopic initialization alone. The LUSI configurations cluster at the bottom of the early-epoch top-1 ranking, consistent with the in-distribution penalty of statistical-invariance regularization.
+\paragraph{Spectral priors learn faster from the first epoch.}
+Figure~\ref{fig:earlyepoch} shows the first-five-epoch convergence trajectories.
+At $H = 4$ the manual prior reaches $0.331$ top-1 after a single epoch versus $0.306$ for the unguided baseline.
+The spectral prior's accuracy advantage at $H = 4$ is established at initialization rather than built up during training, while LUSI-like configurations lag in early-epoch top-1.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{compare_runs_early.png}
-\caption{First-five-epoch convergence trajectories across the ten parameter-matched configurations of Table~\ref{tab:crossscene}. \textbf{Left:} training loss (lower is better). \textbf{Center:} validation top-1. \textbf{Right:} validation top-3. Legend entries list the epoch-1 value and are sorted by epoch-1 validation top-1 (descending), so the early leader sits at the top. Colors are consistent with the full-trajectory view of the same runs. The 8-head configurations (PCA 8H, Trans 8H, Manual 8H, Manual + LUSI 8H) reach the highest epoch-1 top-1 ($\sim 0.34$--$0.36$), while at $H = 4$ the manual prior leads the unguided baseline at epoch 1 by $+2.5$~pp ($0.331$ vs $0.306$) --- the architectural-prior head start before any data-driven learning has had time to discover Fe$^{3+}$-relevant structure independently. The four LUSI configurations cluster near the bottom of the epoch-1 ranking, consistent with the consistency-loss training-cost overhead reducing effective per-epoch learning at saturated capacity.}
+\caption{First-five-epoch convergence trajectories across the ten parameter-matched configurations of Table~\ref{tab:crossscene}. \textbf{Left:} training loss (lower is better). \textbf{Center:} validation top-1. \textbf{Right:} validation top-3.}
 \label{fig:earlyepoch}
 \end{figure}
 
-At $H=8$, the story changes. 
-The transformer-only baseline reaches $0.819$, the PCA-curated prior is essentially tied at $0.818$, and the manual prior falls to $0.806$. 
-This suggests that priors help most when attention capacity is constrained. 
-When capacity is larger, a narrow hand-coded prior can over-constrain the model, while a diffuse PCA prior is largely neutral because it overlaps more closely with the spectral structure the unguided model can discover from data.
+\paragraph{A smaller model with a spectroscopic prior matches the performance of a larger model without one.}
+A 4-head transformer initialized with the manual spectral prior reaches top-1 accuracy $0.808$, within $1.1$~pp of an 8-head unguided transformer ($0.819$).
+This almost recovers the $+3.0$~pp gain that doubling the head count would otherwise deliver (Trans $H = 4$: $0.789 \rightarrow$ Trans $H = 8$: $0.819$), while using half as many attention heads and $13\%$ less training time.
+Initializing the four available heads at physically plausible Fe$^{3+}$ wavelengths gives the model a spectroscopic head-start that partially substitutes for the broader spectral coverage of a larger architecture.
 
-The rare-class analysis further clarifies where the low-capacity prior helps. 
-When per-class F1 is stratified by training-set support, the manual prior produces positive median F1 gain in every rarity bin, with the largest gains in the rare-but-learnable regime of roughly 200--2000 training pixels per class. 
-The PCA-curated prior shows a similar positive median in this regime. 
-By contrast, LUSI alone yields negative median F1 gain for rare classes, indicating that invariance regularization cannot substitute for class examples or spectroscopic information when the model must learn under limited support. 
-Thus, the architectural prior is most useful as a sample-efficiency and capacity-efficiency tool, not as a universal replacement for model capacity.
+\paragraph{Attention concentrates near known Fe$^{3+}$ diagnostic wavelengths.}
+Figure~\ref{fig:trans4_attn} shows class-conditional mean attention for goethite (class~2, $N = 141$ validation pixels) at $H = 4$ across four parameter-matched configurations.
+On the held-out validation split, the transformer baseline reaches F1-score $0.92$ for goethite and $0.93$ for hematite (a second ferric-iron endmember; analogous attention plot in the SI Appendix).
 
-Architectural and loss-based priors do not necessarily stack. 
-At $H=4$, the combined PCA-curated  + LUSI configuration reaches top-1 accuracy $0.790$, statistically tied with the unguided baseline and below PCA-curated alone. 
-This indicates interference between the two mechanisms at constrained capacity. 
-A plausible explanation is that the consistency loss encourages the trainable bias to absorb differences between original and augmented passes, thereby distorting the structured spectral initialization. 
-The two mechanisms therefore target different regimes: spectral priors improve in-distribution accuracy and interpretability under limited attention capacity, whereas statistical-invariance regularization tests robustness to label-preserving TOA perturbations but does not improve in-distribution top-1 accuracy in these experiments.
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{Geothite_4headAttn.png}
+\caption{Head-averaged class-conditional mean attention $\bar{\mathbf{A}}^{(c)} \in \R^{285}$ for goethite (class~2) at $H = 4$: transformer baseline (red), manual Fe$^{3+}$ prior (orange), PCA-curated prior (blue), LUSI-like consistency loss (green). Dashed lines mark goethite Fe$^{3+}$ diagnostics (480, 670, 920~nm); gray spans are H$_2$O masks. Spectral priors concentrate attention near canonical wavelengths; the unguided and LUSI-like configurations do not.}
+\label{fig:trans4_attn}
+\end{figure}
 
-\subsubsection{Cross-region deployment reveals a robustness tradeoff rather than uniform top-1 improvement}
+At $H = 4$, the manual and PCA-curated priors produce statistically significant head-averaged Spearman correlation with hematite and goethite absorption depth ($\rho \approx 0.17$--$0.24$), with per-head correlations reaching $\rho \approx 0.39$ ($p < 10^{-7}$) where the prior anchors attention near canonical Fe$^{3+}$ regions.
+The unguided $H = 4$ transformer and LUSI-like configurations show no significant alignment.
+At $H = 8$, the unguided transformer reaches $\rho = 0.32$ ($p < 10^{-6}$), recovering spectroscopic alignment without explicit initialization.
 
-The LUSI-inspired consistency loss penalizes prediction drift under two label-preserving transformations of the input spectrum: multiplicative scaling, representing illumination variation, and a smooth additive spectral-slope change, representing low-order atmospheric or scattering-related slope variation.
-These transformations are not a full atmospheric model and do not assume that TOA reflectance equals surface reflectance.
-They are instead soft invariance predicates in TOA-input space.
+\paragraph{Spectral priors improve rare-class capture; the LUSI-like loss alone does not.}
+When per-class F1 is stratified by training-set support, the manual and PCA-curated priors produce positive median F1 gain in every rarity bin.
+In the rare-but-learnable regime of $\sim$200--2000 training pixels per class, the manual prior at $H = 4$ reaches mean F1 $= 0.62$, statistically tied with the $H = 8$ transformer-only baseline (F1 $= 0.64$) and well above LUSI 4H (F1 $= 0.49$).
+Above $\sim$1000 training samples per class, all configurations converge to F1 $\approx 0.82$--$0.86$ with negligible separation.
+Spectral priors therefore behave as sample-efficiency tools concentrated in the rare-class regime.
+
+\paragraph{Spectral priors and the LUSI-like consistency loss do not stack additively.}
+At $H = 4$, combining either spectral prior with the LUSI-like loss is consistently worse than the prior alone on every metric.
+PCA-curated + LUSI reaches top-1 $0.790$ ($-1.9$~pp vs PCA-curated alone), and Manual + LUSI reaches $0.795$ ($-1.3$~pp vs Manual alone); both are statistically tied with the unguided baseline.
+At $H = 8$ the conflict softens to neutrality, with Manual + LUSI ($0.808$) essentially tied with Manual alone ($0.806$).
+The two mechanisms therefore target different performance axes: spectral priors improve in-distribution accuracy, interpretability, and rare-class behavior, whereas the LUSI-like loss's effect is concentrated in rare-class macro recall on out-of-distribution scenes (see Cross-region deployment, below).
+
+\paragraph{Granule-scale deployment within the training region.}
+Across three representative Africa/Middle East granules spanning approximately $1.4$--$1.6$~million mineral pixels each, the mean $H = 4$ top-1 ordering is PCA-curated ($0.888$) $>$ Manual ($0.882$) $>$ Transformer ($0.874$) $>$ LUSI ($0.865$); at $H = 8$ the ordering is PCA-curated ($0.892$) $>$ Trans ($0.890$) $>$ Manual ($0.877$) $\geq$ LUSI ($0.874$).
+Macro recall favors spectral priors on every granule; on one granule, class~32 reaches F1 $= 0.32$ under the PCA-curated prior versus F1 $= 0.04$ under the transformer baseline, despite having only 117 mineral pixels.
+
+\paragraph{Cross-region deployment to the southwestern US.}
+Cross-region deployment to a geographically disjoint southwestern US desert region (20 mineral-populated granules) reduces top-1 accuracy by $8$--$17$~pp from the training-region validation pool, while top-3 accuracy stays in the $0.87$--$0.92$ range across all transformer configurations (Table~\ref{tab:crossscene}).
+At $H = 4$ the manual prior leads cross-region with SW top-1 $= 0.724$, $+5.5$~pp above the unguided baseline ($0.669$) and $+9.0$~pp above the LUSI-like configuration ($0.634$); its in-region accuracy of $0.808$ drops by $8.4$~pp under cross-region deployment, the smallest drop in the 4-head ablation.
+At $H = 8$ the PCA-curated prior leads (SW top-1 $= 0.705$, an $11.3$~pp drop from in-region $0.818$), narrowly above Manual 8H ($0.699$) and well above LUSI 8H ($0.666$).
+On macro recall, however, the LUSI-like configuration's per-granule advantage is the cleanest signal in the cross-region set: LUSI 4H exceeds the unguided $H = 4$ baseline's macro recall on $19$ of the $20$ SW US granules, and exceeds the manual prior's macro recall on $12$ of $20$, even while losing to both on top-1.
+
+\paragraph{Comparison with a non-attention random-forest baseline.}
+Random forest classifiers are widely used for hyperspectral pixel classification~\cite{wang2022hyspex} and frequently appear as a baseline in transformer-based comparison studies~\cite{hong2021spectralformer}, providing a natural reference point for asking whether the cross-attention transformer's added architectural complexity translates into measurable accuracy gains over a classical model that treats each spectral band independently.
+A 500-tree random forest trained on the identical training set was evaluated against the transformer configurations:
+
+\begin{center}
+\small
+\begin{tabular}{lrr}
+\hline
+\rowcolor[gray]{0.85}
+\textbf{Metric} & \textbf{RF} & \textbf{Transformer range} \\
+\hline
+In-distribution top-1 (pixel)              & $0.716$        & $0.789$--$0.819$ \\
+Granule top-1 (Africa, mean of 3)          & $0.769$        & $0.874$--$0.892$ \\
+Granule top-1 (SW US, mean of 20)          & $0.561$        & $0.634$--$0.724$ \\
+Granule SW US top-3                        & $0.799$        & $0.875$--$0.919$ \\
+Granule SW US macro recall                 & $0.091$        & $0.171$--$0.207$ \\
+Inference per granule                      & $\sim$$105$~s  & $\sim$$45$~s     \\
+\hline
+\end{tabular}
+\end{center}
+
+The accuracy gap between RF and the transformer configurations widens with deployment scale and is most striking on macro recall, consistent with RF's tree splits each thresholding a single band, in contrast to cross-attention's softmax weighting across all 285 bands jointly.
+
+\paragraph{Operational speed and reliability compared with the EMIT pipeline.}
+% TODO: look up published per-granule wall-clock numbers for ISOFIT
+% optimal-estimation inversion (Thompson 2018, Brodrick 2021), SRTMnet
+% (the neural RTM emulator that accelerates ISOFIT), and the Tetracorder
+% spectral-matching stage. Add an explicit per-step comparison (e.g.,
+% "ISOFIT ~X s/pixel, SRTMnet ~Y s/pixel, Tetracorder ~Z s/pixel") so the
+% transformer's 45 s/granule is bounded against a concrete operational
+% number rather than only the 2-month end-to-end delivery latency.
+Single-forward-pass inference at $\sim$45~seconds per full granule is orders of magnitude shorter than the operational EMIT L2B mineral-product median delivery latency of approximately two months from acquisition~\cite{emit_l2b_atbd}.
+The two quantities are not directly comparable because operational latency includes downlink, queueing, atmospheric correction through ISOFIT optimal-estimation inversion~\cite{thompson2018,brodrick2021}, spectral-library matching, quality control, and archive production.
+The transformer is a learned post-hoc surrogate for the SDS-equivalent labels rather than an independent atmospheric retrieval, and its accuracy is therefore bounded by the upstream pipeline (see Discussion).
 
 
-
-Cross-region deployment to a geographically disjoint southwestern US desert region (20 mineral-populated granules) reduces top-1 accuracy by $8$--$17$ percentage points from the training-region validation pool, while top-3 accuracy stays in the $0.87$--$0.92$ range across all configurations (Table~\ref{tab:crossscene}). At $H = 4$ the manual prior leads cross-region (SW top-1 $= 0.724$, $-8.4$~pp drop), $+5.5$~pp above the unguided baseline and $+9.0$~pp above LUSI. At $H = 8$ the PCA-curated prior leads (SW top-1 $= 0.705$, $-11.3$~pp drop), narrowly above Manual 8H ($0.699$) and well above LUSI 8H ($0.666$). The 4H winner is the sharp manual prior; the 8H winner is the diffuse PCA-curated prior.
-
-This sharp-vs-diffuse split at different head counts mirrors the in-distribution pattern visible in the train columns of Table~\ref{tab:crossscene}: narrow Gaussian bumps over-constrain attention at saturated capacity, while diffuse PCA loadings ($\sim$$220$ of $285$ bands) anchor better when more heads are available. The architectural priors are the consistent cross-region winners --- manual at constrained capacity, PCA-curated at saturated capacity. LUSI is last or next-to-last on both top-1 and top-3 at both head counts in this evaluation, providing no consistent cross-region top-1 or top-3 advantage.
-
-\subsection{Post-hoc direct retrieval at deployment scale}
-\label{sec:results_combined}
-
-The operational value of the model is that inference requires a single forward pass from TOA reflectance to an SDS-equivalent mineral label. 
-This does not replace atmospheric correction as a physical product, nor does it establish independent mineral truth. 
-Rather, the model is a post-hoc surrogate for the operational L1B-to-mineral-product mapping learned from previously processed examples. 
-Within that framing, the deployment question is whether validation-pool behavior persists when the model is applied to full EMIT granules.
-
-Across three representative Africa/Middle East granules spanning approximately $1.4$--$1.6$ million mineral pixels each, the mean top-1 ordering is PCA-curated ($0.888$) $>$ Manual ($0.882$) $>$ Transformer ($0.874$) $>$ LUSI ($0.865$). 
-This mirrors the validation-pool ordering among the $H=4$ configurations and confirms that architectural priors retain their in-distribution advantage at granule scale. 
-Macro recall, which is sensitive to rare-class capture, favors architectural priors on every granule. 
-For example, on one granule class~32 improves from F1 $=0.04$ under the transformer baseline to F1 $=0.32$ under the PCA-curated prior, despite having only 117 mineral pixels.
-
-Cross-region full-granule inference is more difficult.
-On the 20-granule southwestern US set, top-1 accuracy drops by $8$--$17$~pp across configurations (Table~\ref{tab:crossscene}), with the manual prior leading at $H = 4$ (SW top-1 $= 0.724$) and the PCA-curated prior leading at $H = 8$ (SW top-1 $= 0.705$).
-The architectural priors are therefore the consistent cross-region winners --- manual at constrained capacity, PCA-curated at saturated capacity --- while LUSI is last or next-to-last on both top-1 and top-3 at both head counts.
-
-Each full granule is processed in approximately 45~seconds on the same Apple M4 Max laptop used for training. 
-This inference time is orders of magnitude shorter than the operational L2B product-delivery latency, although the two quantities are not directly comparable because operational latency also includes downlink, queueing, quality control, and archive production. 
-The practical conclusion is that a physics-informed attention model can provide a fast, inspectable surrogate for mineral-label prediction, suitable for accelerated ground screening, onboard prioritization studies, and stress-testing where spectral priors or invariance assumptions help or hurt.
 
 % ============================================================================
-% 3. DISCUSSION  (~800 words target; TODO body)
+% 3. DISCUSSION  (~800 words target)
 % ============================================================================
 \section{Discussion}
 
-\paragraph{Physics injection as an experimental probe, not a universal improvement.}
-The central result of this work is not that every physics-informed intervention improves every metric. 
-Instead, the experiments show that attention architectures provide a controlled way to test \emph{how} physical knowledge enters a learned remote-sensing surrogate, and when that knowledge helps or constrains the model. 
-The per-head attention bias $\bm{\beta}_h$ serves as an explicit architectural interface for spectroscopic priors, while the statistical-invariance loss provides an external constraint on the input--output mapping through label-preserving transformations. 
-These two mechanisms instantiate two documented modes of physics-informed learning --- architectural prior initialization and loss-based regularization \cite{karpatne2017tgds,raissi2019pinn} --- but their empirical effects differ. 
-Spectral-prior initialization improves capacity efficiency and interpretability when attention heads are limited, especially for rare classes and ferric-mineral endmembers. 
-At larger head count, however, the unguided transformer can discover comparable Fe$^{3+}$-relevant structure directly from data, and narrow manual priors can over-constrain attention. 
-Statistical-invariance regularization does not improve in-distribution top-1 accuracy in these experiments; its value is instead diagnostic, revealing a tradeoff between fitting the sampled training distribution and maintaining sensitivity to label-preserving spectral perturbations.
+The central result of this work is not that every physics-informed intervention improves every metric.
+The experiments show that attention architectures provide a controlled way to test \emph{how} physical knowledge enters a learned remote-sensing surrogate, introducing a transparent source of physical information that bridges scientific understanding and machine learning.
 
-\paragraph{What the attention analysis does and does not prove.}
+\paragraph{What the attention analysis does and does not explain.}
 The attention maps provide spectroscopic evidence that the model emphasizes wavelength regions consistent with iron-oxide discrimination, including visible Fe$^{3+}$ charge-transfer structure and VNIR crystal-field regions. 
 However, attention weights are not causal explanations by themselves. 
 They indicate where each learned query samples the spectrum, while the final class decision also depends on the value vectors $\mathbf{V}_j$, which encode reflectance magnitude, local derivative structure, and band-position information. 
@@ -323,211 +298,159 @@ The fact that both minerals share attention peaks is therefore not a failure of 
 The mineral-specific decision is made downstream by the classifier head using the content pooled from those regions. 
 Thus, the appropriate interpretive claim is that the learned representation is \emph{consistent with} known spectroscopy, not that attention alone recovers the full physical retrieval logic.
 
-\paragraph{Spectral priors improve efficiency under constrained capacity.}
-The clearest benefit of the architectural prior appears at $H=4$, where both the manual Fe$^{3+}$ prior and the curated PCA prior recover much of the gain obtained by doubling the number of heads in the transformer-only baseline. 
-This supports a capacity-efficiency interpretation: a weak spectroscopic initialization helps a smaller transformer allocate limited attention heads toward physically plausible regions of the spectrum. 
-The rare-class analysis strengthens this conclusion. 
-Architectural priors produce their largest gains in the rare-but-learnable regime, where there are enough examples to train a classifier but not enough for the model to reliably discover all discriminative spectral structure from data alone. 
-This behavior is consistent with the broader expectation from physics-informed and theory-guided learning that domain knowledge is most valuable when data or capacity are constrained. 
-The $H=8$ results qualify the claim: once attention capacity is sufficient, a sharp manual prior can become a liability, while a broader PCA-derived prior is closer to neutral. 
-The practical implication is that physics priors should be treated as tunable inductive biases, not fixed truths.
-
 \paragraph{Statistical-invariance regularization reveals a robustness tradeoff.}
-The LUSI-inspired consistency loss was designed to encourage stability under illumination scaling and smooth spectral-slope perturbations. 
-These transformations are not a substitute for atmospheric correction and do not assume that TOA reflectance equals surface reflectance. 
-They are soft label-preserving predicates in TOA-input space, motivated by the observation that mineral identity should be stable under moderate brightness and low-order continuum variation. 
-The empirical results show that this regularization does not improve in-distribution top-1 accuracy and can reduce it, especially when capacity is limited. 
-This is not unexpected: an invariance penalty restricts the admissible function class and can suppress useful scene-specific cues. 
-Its benefit is more apparent in robustness-oriented metrics, principally macro-recall, where the loss encourages the model to rely less on brittle spectral-scale and slope information.
-The main conclusion is therefore not that LUSI is the best classifier, but that statistical-invariance regularization exposes a different axis of performance than spectral-prior initialization: robustness and rare-class sensitivity rather than maximum in-distribution accuracy.
+The LUSI-like consistency loss was designed to encourage stability under illumination scaling and smooth spectral-slope perturbations, an acknowledged issue in the EMIT pipeline~\cite{emit_l2a_atbd, emit_l2b_atbd}.
+The physical motivation comes from the first-order radiative-transfer decomposition linking TOA reflectance to surface reflectance,
+\begin{equation}
+\rho_{\text{toa}} \approx T_{\downarrow}\,T_{\uparrow}\,\rho_{\text{surface}} + \rho_{\text{path}},
+\label{eq:toa_decomp_disc}
+\end{equation}
+where $T_{\downarrow}T_{\uparrow}$ is the round-trip atmospheric transmittance, $\rho_{\text{path}}$ is the atmospheric path reflectance, and $\rho_{\text{surface}}$ is the Lambertian surface reflectance of the target (the quantity laboratory USGS spectra measure directly)~\cite{vermote1997sixs}.
+The two LUSI-like predicates approximate label-preserving directions derived from this decomposition: a multiplicative scale perturbation approximates broadband changes in $T_{\downarrow}T_{\uparrow}$, and a smooth additive spectral-slope perturbation approximates a low-order change in $\rho_{\text{path}}$.
 
-\paragraph{Post-hoc direct retrieval as an operational surrogate.}
-The proposed model should be understood as a post-hoc surrogate for the operational L1B-to-mineral-product mapping, not as an independent physical retrieval of surface mineralogy. 
-Its labels are inherited from the EMIT science data system, and its accuracy is therefore bounded by the quality, thresholds, and assumptions of the upstream atmospheric-correction and spectral-matching pipeline. 
+The implementation diverges from Vapnik's original LUSI formulation~\cite{vapnik2020}, in which predicates and statistical invariants enter as \emph{hard constraints} on the admissible function class via minimization of a constrained functional in a Reproducing Kernel Hilbert Space (RKHS).
+The neural training setting does not easily admit hard constraints, so the predicates here enter softly, as a teacher--student consistency loss between predictions on the original spectrum and on its perturbed counterpart.
+The empirical results in this paper show that this soft approximation does not improve in-distribution top-1 accuracy and concentrates its benefit in rare-class macro recall on out-of-distribution scenes; exploring the formal hard-constraint implementation is a natural next step.
+
+\paragraph{Post-hoc direct retrieval as a reliable operational surrogate.}
+The proposed model should be understood as a post-hoc direct retrieval surrogate for the operational L1B-to-mineral-product mapping. 
+Its labels are inherited from the EMIT science data system, and its accuracy is therefore bounded by the quality, thresholds, and assumptions of the mission's SDS atmospheric-correction and spectral-matching pipeline, and not truth. 
 Within that scope, the operational advantage is substantial: once trained, the model maps TOA reflectance to mineral labels using a single forward pass and does not invoke an RTM at inference. 
-Full-granule experiments show that this inference can be performed on commodity Apple Silicon hardware in roughly tens of seconds per granule. 
-This timing should not be directly compared to end-to-end operational product latency, which includes downlink, queueing, ingest, quality control, archive generation, and multi-stage ground processing. 
-Nevertheless, the gap is operationally meaningful. 
-A fast surrogate could support rapid ground screening, prioritization of scenes for full processing, onboard event detection, or exploratory analyses in which approximate mineral labels are useful before validated products are available.
+Full-granule experiments show that this inference can be performed on commodity Apple Silicon hardware in tens of seconds per granule. 
+A fast surrogate supports rapid ground screening and possible onboard event detection, data downlink prioritization, or exploratory analyses in which approximate mineral labels are useful before validated products are available.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{posthoc_workflow.png}
+\caption{Three-step deployment workflow for post-hoc direct retrieval: (1)~one-time SDS processing of a small representative granule subset to produce L1B--L2B training pairs, (2)~transformer training on those pairs with optional physics-infusion mechanisms, and (3)~single-pass mineral prediction on new granules at deployment time, without invoking the radiative-transfer model.}
+\label{fig:posthoc_workflow}
+\end{figure}
 
 \paragraph{Conditions for transfer beyond EMIT.}
-The framework is transferable in structure, not in its specific spectral content. 
-For another sensor, mineral group, or physical-science application, the diagnostic wavelengths, prior construction, and label-preserving transformations would have to be rebuilt from the relevant physics. 
-What transfers is the recipe: identify a feature axis with physical meaning, encode prior knowledge as a weak learnable bias over that axis, and evaluate whether loss-based invariances improve robustness to known label-preserving transformations. 
-In hyperspectral remote sensing, the feature axis is wavelength and the priors come from spectroscopy. 
-In other domains, the analogous axis might be time, frequency, spatial scale, molecular position, or graph connectivity. 
-This makes the approach most appropriate for problems where labels are expensive because they are generated by an upstream physical model or expert pipeline, and where domain knowledge specifies either diagnostic input regions or transformations that should preserve the label.
+The framework is transferable in structure, not in its specific spectral content: for another sensor, mineral group, or physical-science application, the diagnostic wavelengths, prior construction, and label-preserving transformations would have to be rebuilt from the relevant physics.
+What transfers is the recipe --- identify a feature axis with physical meaning, encode prior knowledge as a weak learnable bias over that axis, and evaluate whether loss-based invariances improve robustness to known label-preserving transformations --- making the approach most appropriate for problems where labels are expensive and domain knowledge specifies diagnostic input regions or label-preserving transformations.
 
 \paragraph{Limitations.}
-Several limitations bound the present results. 
-First, the labels are operational mineral-product labels, not independent field-validated mineral truth. 
-The model therefore learns to emulate a science-data-system product and may inherit that product's biases. 
-Second, the main ablation results are single-seed runs at one training-set scale; additional seeds and training-size sweeps are needed to quantify statistical variability and to test whether physics priors become more valuable in smaller-data regimes. 
-Third, attention maps are diagnostic visualizations rather than causal explanations; ablation, masking, or counterfactual tests are needed to prove that specific bands drive individual decisions. 
-Fourth, cross-region performance is evaluated here on a single deployment region (southwestern US) under full-granule inference, which preserves regional class imbalance, rare-class sparsity, and atypical mineral assemblages but may not generalize to all geographic settings.
-Fifth, the LUSI perturbations are intentionally simple. 
-The scale and slope-change transformations capture only low-order label-preserving effects and do not represent the full atmospheric radiative-transfer process.
-Finally, the softmax outputs are model probabilities, not calibrated posterior probabilities; deployment would require calibration or uncertainty quantification to identify when the surrogate should defer to the operational pipeline.
+Several limitations bound the present results.
+First, the labels are operational SDS mineral-product labels rather than independent field-validated mineral truth, so the model may inherit that pipeline's biases.
+Second, the main ablation results are single-seed runs at one training-set scale and on a single cross-region deployment set (southwestern US); additional seeds, training-size sweeps, and deployment regions are needed to quantify statistical variability and broader spatial generalization.
+Third, attention maps and softmax outputs are diagnostic rather than causal or calibrated; ablation/counterfactual tests and post-hoc calibration would be needed to prove that specific bands drive individual decisions and to support probabilistic deployment.
+Fourth, the LUSI-like perturbations capture only low-order label-preserving effects (multiplicative brightness, smooth slope) and do not represent the full atmospheric radiative-transfer process.
 
 \paragraph{Future work.}
-The next step is to convert the surrogate from a promising research model into a validated operational aid. 
-This requires independent validation against field or laboratory-confirmed mineral targets, cross-sensor testing on missions such as PRISMA, EnMAP, SBG, or CHIME, and systematic evaluation across aerosol optical depth, water-vapor burden, solar/view geometry, and surface-brightness regimes. 
-A second direction is causal interpretability: band-masking, counterfactual spectral editing, and attention-bias intervention experiments could determine whether the wavelengths highlighted by attention are necessary for correct classification. 
-A third direction is uncertainty quantification, including temperature scaling, conformal prediction, ensembles, or post-hoc calibration against operational confidence measures. 
-A fourth direction is adaptive physics injection: instead of fixing manual or PCA priors, the model could learn when to trust, attenuate, or override a prior based on scene conditions. 
-Finally, onboard or near-realtime deployment studies should evaluate not only inference speed, but also memory footprint, radiation-tolerant compute constraints, downlink prioritization value, and failure-detection logic for cases where the surrogate should defer to full ground processing.
+The next step is to convert the surrogate into a validated operational aid through independent validation against field/laboratory-confirmed mineral targets, cross-sensor testing, evaluation across aerosol optical depth, and surface-brightness regimes, considering post-hoc uncertainty calibration against operational confidence measures.
+A second direction is adaptive physics infusion: instead of fixing manual or PCA priors, the model could learn when to trust, attenuate, or override a prior based on scene conditions.
+A third direction is causal interpretability of the attention patterns: band-masking, counterfactual spectral editing, and attention-bias intervention experiments could determine which of the highlighted wavelengths are \emph{necessary} for correct classification, moving the attention story from \emph{consistent with} known spectroscopy to a stronger causal claim.
 
 % ============================================================================
 % 4. MATERIALS AND METHODS  (~1000 words target)
 % ============================================================================
 \section{Materials and Methods}
 
-The architectural overview is shown in Figure~\ref{fig:architecture}. 
-The four shaded regions correspond to the base forward pass---preprocessing, tokenization, attention pooling, and classification---while the two side blocks correspond to optional physics-injection mechanisms: spectral-prior initialization of the attention bias and statistical-invariance consistency regularization. 
-Full architectural equations, hyperparameters, data sanitization, and extended ablation results are provided in the SI Appendix.
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{architecture.pdf}
+\caption{End-to-end architecture overview.
+The forward pass is partitioned into four regions: preprocessing, tokenization, attention pooling, and classification.
+Spectral priors enter through the per-head attention bias $\bm{\beta}_h$; statistical-invariance regularization requires a second (student) forward pass through the network on a transformed input $T_{\text{joint}}(\mathbf{w})$, with the resulting prediction compared against the teacher prediction via a KL consistency loss.}
+\label{fig:architecture}
+\end{figure}
 
-\paragraph{Cross-attention transformer.}
-Each pixel is represented by its $L=285$-band EMIT top-of-atmosphere (TOA) reflectance vector. 
-Reflectance values are robust-z-score normalized using per-band medians and interquartile ranges computed from the training split only. 
-The normalized spectrum is then tokenized using a shape-aware spectral representation that concatenates each band value with first and second finite differences along wavelength, following the derivative-spectroscopy motivation of Tsai and Philpot~\cite{tsai1998derivative}. 
-Each spectral token is embedded together with a learned band-position embedding.
+The Materials and Methods are organized to mirror the end-to-end architecture in Figure~\ref{fig:architecture}: the four numbered subsections below correspond to the four shaded modules of the base forward pass: preprocessing, tokenization, attention pooling, and classification, followed by the two optional physics-infusion mechanisms (spectral-prior initialization of the attention bias and LUSI-inspired statistical-invariance consistency regularization) that operate on top of that pass.
 
-The model uses $H$ learned query vectors $\mathbf{q}_h \in \mathbb{R}^d$ to cross-attend to the $L$ spectral tokens. 
+\paragraph{(1)~Data and preprocessing.}
+Training and validation use a class-balanced sample of $1{,}260{,}203$ EMIT TOA pixels drawn from 396 granules over Africa and the Middle East.
+Each pixel is paired with the Group~1 mineral label assigned by the operational EMIT mineral-identification pipeline, which applies Tetracorder-style spectral matching to the pipeline's atmospherically corrected product~\cite{clark2003tetracorder}; the labels are therefore treated as operational science-data-system products rather than independent mineral ground truth.
+The original Group~1 distribution is highly imbalanced and dominated by iron-bearing minerals, especially goethite and nano-hematite variants.
+To reduce dominance by the most common classes, a stratified per-class cap of $7{,}500$ pixels is applied; the sampled dataset is then split 90/10 into training and validation sets using a fixed random seed.
+Labels with value zero are treated as 'non-minerals' and excluded before training.
+
+Each pixel is represented by its $L = 285$-band EMIT top-of-atmosphere (TOA) reflectance vector $\mathbf{w} \in \R^{L}$, robust-z-score normalized using per-band medians and interquartile ranges computed from the training split only:
+\[
+\hat{w}_j = \frac{w_j - \mathrm{median}(\mathbf{w})}{\mathrm{IQR}(\mathbf{w}) + \epsilon}.
+\]
+Robust z-score is preferred over mean--standard-deviation normalization because the per-band reflectance distribution is heavy-tailed and contaminated by atmospheric absorption residuals at the EMIT band edges, where outliers could dominate the per-band statistics.
+
+\paragraph{(2)~Tokenization and embedding.}
+The normalized spectrum is tokenized using a shape-aware spectral representation that concatenates each band value with its first and second finite differences along wavelength, following the derivative-spectroscopy motivation of Tsai and Philpot~\cite{tsai1998derivative}: $\mathbf{u}_j = [\hat{w}'_j,\, \Delta\hat{w}_j,\, \Delta^2\hat{w}_j]^T \in \R^{3}$.
+Each spectral token is then embedded via a learned linear layer into a content embedding $\mathbf{c}_j \in \R^{d/2}$, concatenated with a learned positional embedding $\mathbf{p}_j \in \R^{d/2}$, and passed through a linear mixing layer with LayerNorm to produce a token embedding $\mathbf{e}_j \in \R^{d}$ with $d = 192$.
+The token embedding sequence forms the matrix $\mathbf{E} \in \R^{L \times d}$.
+
+\paragraph{(3)~Attention pooling.}
+The model uses $H$ learned query vectors $\mathbf{q}_h \in \R^{d}$ to cross-attend to the $L$ spectral tokens, following the asymmetric cross-attention construction of the Perceiver~\cite{jaegle2021perceiver} that replaces self-attention with a small set of learned queries and reduces complexity from $O(L^2)$ to $O(H \cdot L)$.
+Per-head key and value matrices are linear projections $\mathbf{K} = \mathbf{E}\mathbf{W}_K$ and $\mathbf{V} = \mathbf{E}\mathbf{W}_V$.
 For head $h$, the attention score vector is
 \[
-\mathbf{s}_h
-=
-\frac{\mathbf{K}\mathbf{q}_h}{\sqrt{d}}
-+
-\bm{\beta}_h,
+\mathbf{s}_h = \frac{\mathbf{K}\mathbf{q}_h}{\sqrt{d}} + \bm{\beta}_h,
 \]
-where $\mathbf{K}$ is the key matrix and $\bm{\beta}_h \in \mathbb{R}^L$ is a learnable per-head spectral bias. 
+where $\bm{\beta}_h \in \R^{L}$ is a learnable per-head spectral bias.
 The attention weights are
 \[
-\mathbf{A}_h
-=
-\mathrm{softmax}\left(\frac{\mathbf{s}_h}{\tau_a}\right),
+\mathbf{A}_h = \mathrm{softmax}\left(\frac{\mathbf{s}_h}{\tau_a}\right),
 \]
-where $\tau_a$ is the attention temperature. 
-The pooled head representation is
-\[
-\mathbf{z}_h = \mathbf{V}^{T}\mathbf{A}_h,
-\]
-and the $H$ pooled vectors are concatenated and passed to a two-layer MLP classifier that produces logits over $Q_1=95$ Group~1 mineral classes.
+where $\tau_a = 0.9$ is the attention temperature.
+The pooled head representation is $\mathbf{z}_h = \mathbf{V}^{T}\mathbf{A}_h$, and the $H$ pooled vectors are concatenated into $\mathbf{z}_{\text{cat}} = \mathbf{z}_1 \oplus \cdots \oplus \mathbf{z}_H \in \R^{Hd}$.
+In the transformer-only baseline, $\bm{\beta}_h$ is initialized to zero but remains trainable, parameter-matching the physics-prior configurations so that any improvement from the prior is attributable to initialization rather than added trainable parameters.
 
-In the transformer-only baseline, $\bm{\beta}_h$ is initialized to zero but remains trainable. 
-This makes the baseline parameter-matched to the physics-prior configurations: all models have the same attention-bias capacity, but only the physics-prior models receive spectroscopic information at initialization.
+\paragraph{(4)~Classification.}
+The pooled concatenation $\mathbf{z}_{\text{cat}}$ is passed through a two-layer MLP head ($Hd \to d \to Q_1$) with ReLU activation and dropout $p = 0.1$, producing logits over $Q_1 = 95$ Group~1 mineral classes.
+The predicted mineral identity is $\hat{q}_1 = \arg\max \mathrm{softmax}(\mathrm{logits})$; the corresponding softmax distribution provides the top-1 and top-3 retrievals reported throughout this paper.
+The softmax output is treated as a model probability rather than a calibrated posterior probability.
 
-\paragraph{Architectural prior: attention-bias initialization.}
-Spectroscopic prior information is injected by initializing $\bm{\beta}_h$ before training. 
-The bias is not a hard constraint; after an optional short freeze period, it is updated by gradient descent like the rest of the model. 
-Thus, the prior acts as a weak inductive starting point that the model can preserve, attenuate, amplify, or reshape.
+\paragraph{Physics infusion (optional): spectroscopic attention-bias initialization.}
+Spectroscopic prior information is injected by initializing $\bm{\beta}_h$ before training.
+The bias is not a hard constraint; after an optional short freeze period, it is updated by gradient descent like the rest of the model, so the prior acts as a weak inductive starting point that the model can preserve, attenuate, amplify, or reshape.
+Two prior constructions are evaluated, summarized below. In both, the bias is initialized as $\bm{\beta}_h^{(0)} = \alpha\,\mathbf{b}_h$, with $\mathbf{b}_h \in \R^{L}$ the per-head prior profile and $\alpha = 1.0$ the scalar prior strength.
 
-Two prior constructions are evaluated. 
-In the manual mode, literature-derived Fe$^{3+}$ diagnostic wavelengths are encoded as Gaussian bumps over wavelength. 
-The default manual prior uses the visible and near-infrared ferric-iron regions: 480,\ 535,\ 670,\ 860,\ 920 nm.
-corresponding to goethite and hematite visible features and broader Fe$^{3+}$ crystal-field absorption structure. 
+\subparagraph{Manual prior.}
+Literature-derived Fe$^{3+}$ diagnostic wavelengths are encoded as Gaussian bumps over wavelength.
+The default manual prior uses five visible and near-infrared ferric-iron regions: $480$, $535$, $670$, $860$, and $920$~nm, corresponding to goethite and hematite visible features and broader Fe$^{3+}$ crystal-field absorption structure~\cite{Jiang2014AlGoethite, clark1999, sherman1985, burns1993}.
 Each center wavelength $\lambda_c$ is represented as
 \[
-b(\lambda;\lambda_c,\sigma)
-=
-\exp\left[
--\frac{(\lambda-\lambda_c)^2}{2\sigma^2}
-\right],
+b(\lambda;\lambda_c,\sigma) = \exp\left[-\frac{(\lambda - \lambda_c)^2}{2\sigma^2}\right],
 \]
-with $\sigma=25$~nm. 
-The Gaussian bumps are assigned to heads by round-robin allocation and normalized before scaling by the prior strength $\alpha$.
+with $\sigma = 25$~nm.
+The Gaussian bumps are assigned to heads by round-robin allocation and peak-normalized to form $\mathbf{b}_h$.
 
-In the PCA-curated mode, the prior is constructed offline from EMIT-resampled USGS reference spectra. 
-The reference subset includes hematite and goethite targets, ferric oxide/hydroxide/sulfate confusers, and selected Fe-bearing hard negatives. 
-Spectra are sanitized to remove fill values and non-finite entries, small missing gaps are interpolated along wavelength, and spectra with excessive missingness are excluded. 
-Before PCA, each spectrum is row-normalized to reduce dominance by broadband albedo and emphasize spectral shape. 
-Principal components are computed over valid non-water-vapor bands, expanded back to the full 285-band EMIT grid, and converted into attention-bias profiles using z-scored absolute loading magnitudes:
+\subparagraph{PCA-curated prior.}
+The prior is constructed offline from a curated subset of the USGS Spectral Library~\cite{kokaly2017usgs}, with each laboratory spectrum convolved to EMIT's 285 bands.
+The subset includes three categories: \emph{targets} (hematite, goethite, and iron-bearing variants --- the classes the model must identify), \emph{spectroscopic confusers} (other Fe-bearing minerals whose spectra overlap the targets, ensuring the prior captures within-family variability), and \emph{hard negatives} (Fe-poor minerals such as chlorites and pyroxenes whose spectra could be confused with iron oxides under noise, the borderline cases the model must learn to reject).
+Spectra are sanitized to remove fill values and non-finite entries, small missing gaps are interpolated along wavelength, and spectra with excessive missingness are excluded, leaving $\sim$$56$ surviving spectra in the reference matrix $\mathbf{X}_{\mathrm{ref}}$.
+Each spectrum is row-normalized to suppress broadband-albedo variation and emphasize spectral shape; principal components are computed over the valid non-water-vapor bands ($\sim$$220$ of $285$), expanded back to the full 285-band EMIT grid, and converted into attention-bias profiles using z-scored absolute loading magnitudes:
 \[
-\beta_h(\lambda)
-=
-z\left(|v_h(\lambda)|\right),
+\beta_h(\lambda) = z\left(|v_h(\lambda)|\right),
 \]
-where $v_h(\lambda)$ is the signed loading vector for component $h$. 
-Water-vapor absorption regions and the noisy long-wavelength edge are set to zero in the prior.
+where $v_h(\lambda)$ is the signed loading vector for principal component $h$.
+The water-vapor absorption regions and the noisy long-wavelength edge are set to zero in the prior.
 
-\paragraph{Loss-based prior: statistical-invariance consistency regularization.}
-The loss-based physics injection is implemented as a consistency regularizer motivated by Vapnik--Izmailov statistical invariants~\cite{vapnik2020}. 
-For each training pixel, the model compares its prediction on the original spectrum with its prediction on a perturbed spectrum generated by two label-preserving transformations in TOA-input space.
-
-The first transformation is a multiplicative scale factor $\rho \sim U(0.8,1.2)$, representing moderate illumination or topographic-brightness variation. 
-The second is a smooth additive spectral-slope change $\xi \sim \mathcal{N}(0,0.01)$,
-applied along the wavelength axis to represent low-order spectral-slope variation associated with residual atmospheric or scattering effects. 
-These perturbations are not intended to perform atmospheric correction and do not assume that TOA reflectance equals surface reflectance. 
-They are conservative label-preserving transformations: mineral identity should remain stable under moderate brightness and smooth-slope changes.
-The joint transformation applied to a single-pixel spectrum $\mathbf{w}$ is
+\paragraph{Physics infusion (optional): LUSI-inspired statistical-invariance consistency loss.}
+The loss-based physics injection is a consistency regularizer motivated by Vapnik--Izmailov statistical invariants~\cite{vapnik2020}; its connection to the TOA decomposition (Equation~\ref{eq:toa_decomp_disc}) and the soft-loss relaxation of formal LUSI are discussed above.
+For each training pixel, the joint transformation applied to a single-pixel spectrum $\mathbf{w}$ is
 \[
 T_{\text{joint}}(\mathbf{w}) = \rho\,\mathbf{w} + \xi\,\bm{\lambda}_{\text{grid}},
 \]
-where $\bm{\lambda}_{\text{grid}} \in \R^L$ is a fixed linear wavelength-axis vector (a ramp from $-1$ to $+1$ across the $L$ bands) and $\rho, \xi$ are sampled independently for each pixel at each training step.
-
-The transformations are applied in raw reflectance space.
-The normalized input is first denormalized, perturbed, clamped to a physically valid range, and then renormalized before being passed through the model. 
-The unperturbed prediction acts as a stop-gradient teacher distribution, while gradients propagate through the perturbed student pass. 
-The consistency loss is the temperature-scaled Kullback--Leibler divergence
+where $\rho \sim U(0.8, 1.2)$ is a multiplicative brightness scale (approximating broadband variation in the round-trip transmittance $T_{\downarrow}T_{\uparrow}$ in Equation~\ref{eq:toa_decomp_disc}), $\xi \sim \mathcal{N}(0, 0.01)$ is a spectral-slope coefficient (approximating first-order wavelength dependence of the additive path-reflectance term $\rho_{\text{path}}$), and $\bm{\lambda}_{\text{grid}} \in \R^L$ is a fixed linear ramp from $-1$ to $+1$ across the $L$ bands; $\rho$ and $\xi$ are sampled independently for each pixel at each training step.
+Transformations are applied in raw reflectance space: the normalized input is denormalized, perturbed, clamped to a physically valid range, and renormalized before being passed through the model.
+The unperturbed prediction $\mathbf{p}_{\text{orig}}$ acts as a stop-gradient teacher and the perturbed prediction $\mathbf{p}_{\text{trans}}$ as the student, and the consistency loss is the temperature-scaled Kullback--Leibler divergence
 \[
 \mathcal{L}_{\mathrm{KL}}
-=
-D_{\mathrm{KL}}
-\left(
-\mathbf{p}_{\text{orig}}^{\mathrm{sg}}
-\;\|\;
-\mathbf{p}_{\text{trans}}
-\right),
+= D_{\mathrm{KL}}\!\left(\mathbf{p}_{\text{orig}}^{\mathrm{sg}}\;\|\;\mathbf{p}_{\text{trans}}\right),
 \]
-where $\mathbf{p}_{\text{orig}}$ is the model prediction on the original spectrum, $\mathbf{p}_{\text{trans}}$ is the prediction on the transformed spectrum $T_{\text{joint}}(\mathbf{w})$, and superscript $\mathrm{sg}$ indicates stop-gradient: during training the clean-input prediction is treated as a fixed target so that gradients flow only through the perturbed-input prediction, preventing the degenerate solution in which both predictions drift toward a shared trivial output to make the loss artificially small.
-The total objective is
-\[
-\mathcal{L}_{\mathrm{total}}
-=
-\mathcal{L}_{\mathrm{CE}}
-+
-\lambda_{\mathrm{LUSI}}\mathcal{L}_{\mathrm{KL}},
-\]
-with $\lambda_{\mathrm{LUSI}}=1$ when consistency regularization is enabled.
-
-\paragraph{Training data.}
-Training and validation use a class-balanced sample of 1{,}260{,}203 EMIT TOA pixels drawn from 396 granules over Africa and the Middle East. 
-Each pixel is paired with the Group~1 mineral label assigned by the operational EMIT mineral-identification pipeline, which applies Tetracorder-style spectral matching to the pipeline's atmospherically corrected product~\cite{clark2003tetracorder}. 
-The labels are therefore treated as operational science-data-system products rather than independent mineral ground truth.
-
-The original Group~1 distribution is highly imbalanced and dominated by iron-bearing minerals, especially goethite and nano-hematite variants. 
-To reduce dominance by the most common classes, a stratified per-class cap of 7{,}500 pixels is applied; the sampled dataset is then split 90/10 into training and validation sets using a fixed random seed. 
-Labels with value zero are treated as unclassified and excluded before training; mineral labels 1--95 are shifted to class indices 0--94.
+where the stop-gradient on $\mathbf{p}_{\text{orig}}$ prevents both predictions from drifting toward a shared trivial output.
+The total objective is $\mathcal{L}_{\mathrm{total}} = \mathcal{L}_{\mathrm{CE}} + \lambda_{\mathrm{LUSI}}\mathcal{L}_{\mathrm{KL}}$, with $\lambda_{\mathrm{LUSI}}=1$ when enabled.
 
 \paragraph{Optimization and ablation protocol.}
 Models are trained for 120 epochs using AdamW with peak learning rate $5\times10^{-4}$, cosine decay, 5\% linear warmup, batch size 1{,}024, and cross-entropy loss with label smoothing $0.05$~\cite{szegedy2016rethinking}. 
 The attention-bias parameters are placed in a separate optimizer group with zero weight decay. 
 For prior-bearing models, the initialized prior heads are frozen for a short initial period and then released for standard gradient-based training. 
-For transformer-only and LUSI-only baselines, the attention bias is initialized at zero and learned from data.
+For transformer-only and LUSI-like-only baselines, the attention bias is initialized at zero and learned from data.
 
-All ablation runs use the same data split, random seed, hardware, optimizer settings, and data pipeline. 
-Wall-clock timings are measured on a single Apple M4 Max laptop using PyTorch's MPS backend. 
+All ablation runs shown in Table \ref{tab:crossscene} use the same data split, random seed, hardware, optimizer settings, and data pipeline.
+Wall-clock timings are measured on a single Apple M4 Max laptop using PyTorch's MPS backend, with full training plus validation taking 117--326 minutes per configuration.
+Configurations that include the LUSI-like consistency loss approximately double the wall-clock cost of those that do not, because each training step performs an additional augmented forward pass.
+At inference time, full-granule prediction on an approximately $1.6$-million-pixel EMIT granule takes $\sim$$28$~$\mu$s per pixel) on the same hardware, independent of the prior-construction choice.
 These timings are intended to compare configurations under identical workstation conditions, not to represent an optimized high-performance-computing deployment.
 
-\paragraph{Attention and spectral-alignment analysis.}
-Attention weights are averaged by class and by head to evaluate which wavelength regions the model emphasizes for selected minerals. 
-For hematite and goethite, attention profiles are compared with literature diagnostic wavelengths and with EMIT-resampled USGS absorption-depth profiles. 
-Spearman rank correlation between attention magnitude and absorption depth is used as a quantitative alignment diagnostic. 
-These attention analyses are interpreted as evidence of spectroscopic consistency, not as causal explanations of individual predictions: the final class decision also depends on the value vectors and downstream classifier.
-
-\paragraph{Cross-region evaluation.}
-Cross-region evaluation applies trained checkpoints to complete granules from a geographically disjoint southwestern US desert region (20 granules each containing at least $20\%$ Group-1 mineral pixels) using the same Group~1 label set.
-Reported values compare the mean per-granule top-1 accuracy on the southwestern US set with the same model's Africa/Middle East validation-pool accuracy (Table~\ref{tab:crossscene}).
-Full-granule cross-region deployment preserves regional class imbalance and rare-class sparsity, which sampled-pixel cross-region tests do not.
-
-\paragraph{Full-granule inference.}
-Deployment-scale inference is evaluated by applying trained checkpoints to complete EMIT granules. 
-For each granule, the model predicts a Group~1 mineral label for every valid mineral pixel, and predictions are compared with the operational Group~1 label product. 
-Top-1 accuracy, top-3 accuracy, macro-F1, and macro-recall are reported. 
-Macro-level metrics are included because they are more sensitive to rare-class behavior than aggregate top-1 accuracy. 
-Full-granule inference is also used to measure practical runtime. 
-On the Apple M4 Max workstation, full-granule inference takes approximately tens of seconds per granule, demonstrating that the learned surrogate can be evaluated far faster than the end-to-end operational product-delivery cycle, while acknowledging that operational latency includes downlink, queueing, quality control, and archive generation in addition to algorithmic computation.
 % ============================================================================
 % BACK MATTER (PNAS-required)
 % ============================================================================
@@ -551,6 +474,6 @@ The mineral grouping matrix used to map Tetracorder identifications to Group-1 /
 % REFERENCES
 % ============================================================================
 \bibliographystyle{unsrt}
-\bibliography{../PaperofPartII/references}
+\bibliography{references}
 
 \end{document}

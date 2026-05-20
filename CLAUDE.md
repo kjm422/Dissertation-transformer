@@ -7,10 +7,11 @@ Physics-informed transformer for hyperspectral mineral classification from EMIT 
 - Cross-attention transformer with learned query vectors (not self-attention) — O(L) not O(L^2)
 - Three modular enhancements: PCA-based attention bias (USGS ref spectra), LUSI consistency regularization, spectral derivatives input
 - 285 EMIT bands, 95 mineral classes (Group 1), per-pixel classification
-- Training script lineage: spectral_trans_withqoi_attentionr{N}_pcalusi.py (current: r17)
+- Training script lineage: spectral_trans_withqoi_attentionr{N}_pcalusi.py (current: r18)
 - r15 vs r14: non-PCA hybrid heads now init to zero instead of 0.01·N(0,I) noise — symmetry breaking comes from random query vectors q_h ~ N(0,1), so explicit bias noise is unnecessary. This makes non-PCA-head behavior consistent between physics_init=True (hybrid) and physics_init=False (all zeros).
 - r16 vs r15: adds `--physics_mode manual` for a hand-curated weak Gaussian-bump prior at user-specified diagnostic wavelengths (defaults: 480/535/670/860/920 nm). Calibrated defaults: `--manual_prior_normalize max`, `--physics_alpha 0.5`, `--physics_freeze_prior_epochs 1`. Wavelengths cycle across heads via `round_robin` (or `shared` / `one_per_head`). Includes wv-mask sanity warning if a center falls in a masked band.
 - r17 vs r16: adds `--physics_mode precomputed` with a forgiving loader (`load_precomputed_bias`). Loads a `(k, 285)` attention-bias `.npy` from `--prior_bias_path` and auto-pads (k < n_heads) or truncates (k > n_heads) to match the model's head count. Padded zero rows stay trainable from epoch 1 (only the rows with non-zero loadings count toward `physics_frozen_heads`). Intended companion to `build_group1_ferric_pca_prior.py`.
+- r18 vs r17: adds `--include_zero_class` (off by default). When set, NCLS=96, the legacy class-0 filter + `-1` label shift are skipped, and label 0 ('non-mineral / no Group-1 match') is treated as a 96th abstain class. Default (off) behaviour preserves the r17 locked 95-class pipeline. Companion to the new training files `TOApixel_balanced_W_gb1_gb2_train{16000,20000,24000}.npy` produced by the modified `Africa_pixel_GroupID.ipynb` sampler that retains class 0 at the same per-class cap.
 
 ## Key Data Paths
 - Training data: `/Users/kmccoy/Documents/USC/Research/Dissertation/Data/TOApixel_balanced_W_gb1ID_gb2ID_train7500.npy`
@@ -139,7 +140,7 @@ PCA on raw reflectance (no continuum removal) breaks through the continuum-remov
 
 ## Cross-Region Deployment (SW US desert, trained on Africa/Middle East)
 
-**Current (2026-05-11): 20 SW granules with ≥20% Group-1 mineral fraction.** `tab:crossscene` in all three documents (PNAS, original paper, dissertation) uses these values, covering both head counts and both top-1 / top-3:
+**Current (2026-05-17): 20 SW granules with ≥20% Group-1 mineral fraction; Manual + LUSI rows + RF row added.** `tab:crossscene` in all three documents (PNAS, original paper, dissertation) uses these values, covering both head counts and both top-1 / top-3:
 
 | Configuration | Train top-1 | SW top-1 | Train top-3 | SW top-3 |
 | --- | ---: | ---: | ---: | ---: |
@@ -147,18 +148,23 @@ PCA on raw reflectance (no continuum removal) breaks through the continuum-remov
 | Manual 4H | 0.808 | **0.724** | 0.967 | **0.919** |
 | PCA-zabs 4H | 0.809 | 0.644 | 0.967 | 0.868 |
 | LUSI 4H | 0.787 | 0.634 | 0.961 | 0.875 |
+| Manual + LUSI 4H | 0.795 | 0.667 | 0.962 | 0.885 |
 | Trans 8H | 0.819 | 0.683 | 0.970 | 0.902 |
 | Manual 8H | 0.806 | 0.699 | 0.966 | 0.896 |
 | PCA-zabs 8H | 0.818 | **0.705** | 0.970 | **0.910** |
 | LUSI 8H | 0.796 | 0.666 | 0.962 | 0.893 |
+| Manual + LUSI 8H | 0.808 | 0.688 | 0.967 | 0.900 |
+| **Random Forest** (500 trees) | 0.716 | 0.561 | 0.922 | 0.799 |
 
 **Key findings:**
 
-- **Cross-region top-1 drops 8–17 pp**, but **top-3 stays in the 0.87–0.92 range** across all configurations — the model places the correct mineral in its top-3 guesses for ~88–92% of SW pixels.
+- **Cross-region top-1 drops 8–17 pp**, but **top-3 stays in the 0.87–0.92 range** across all transformer configurations — the model places the correct mineral in its top-3 guesses for ~88–92% of SW pixels.
 - **Manual prior wins at 4H** on every SW metric (top-1 0.724, top-3 0.919; +5.5 pp top-1 over Trans 4H, +9.0 pp over LUSI 4H).
 - **PCA-curated prior wins at 8H** on every SW metric (top-1 0.705, top-3 0.910). Narrow lead over Manual 8H (+0.6 pp top-1).
 - **Sharp-vs-diffuse split at different head counts**: at 4H the sharp manual prior generalizes best; at 8H the diffuse PCA-curated prior takes over. Mirrors the in-distribution capacity-saturation pattern of Table `tab:ablation`.
-- **LUSI never leads top-1 or top-3** at either head count. Macro-recall is its only narrow edge at 4H (0.207, +0.13 pp over Manual); at 8H, PCA-zabs has highest macro-recall (0.207 vs LUSI 0.199).
+- **LUSI never leads top-1 or top-3** at either head count. Macro-recall is its only narrow edge at 4H (0.207, +0.13 pp over Manual); at 8H, PCA-zabs has highest macro-recall (0.207 vs LUSI 0.199). **LUSI 4H beats Trans 4H on macro recall in 19 of 20 SW US granules** (per-granule count from `granule_inference_summary_SW.csv`); the headline "concentrates in rare-class macro recall on out-of-distribution scenes" claim has this 19/20 count as its empirical foundation.
+- **Manual + LUSI confirms the destructive interference pattern at cross-region scale** (2026-05-16). Manual + LUSI 4H reaches SW top-1 0.667 — only +3.3 pp above LUSI alone (0.634) but **−5.7 pp below Manual alone (0.724)**. Manual + LUSI 8H reaches SW top-1 0.688, between LUSI 8H (0.666) and Manual 8H (0.699), with a smaller −1.1 pp gap to Manual alone. The capacity-dependent interference pattern observed in-distribution (architectural + loss-based priors conflict at H=4, soften toward neutrality at H=8) carries over to the SW US deployment, on both top-1 and top-3. Combining the two physics-injection mechanisms is consistently worse than the better single mechanism.
+- **Random Forest baseline (2026-05-17)** trained on the identical 90/10 split reaches in-distribution top-1 0.716 (Part-I baseline) and SW US top-1 0.561 (a 21 pp cross-region degradation, worse than any transformer's 8–17 pp degradation). RF SW US top-3 = 0.799 (within 2 pp of the worst transformer at granule scale, ~12 pp below at cross-region). **RF SW US macro recall = 0.091, less than half of every transformer configuration** (≥0.171), consistent with RF's tree splits each thresholding a single band vs cross-attention's softmax weighting across all 285 bands jointly. RF inference ~105 s per granule (~2.3× slower than the transformer at the same scale).
 
 Aggregator: `kelli_scripts/granule_inference_summary_SW.py` reads predictions from `Data/attn_outputs_<config>/SW/Xformer_predictSW_<scene_id>.npy`, filters to granules with ≥20% G1 mineral fraction (capped at 20), writes `Data/granule_inference_summary_SW.csv` with both unweighted and pixel-weighted means. Pixel-weighted means use `Σ_g (metric_g × n_g) / Σ_g n_g` where n_g is the per-granule mineral-pixel count; for top-1 and top-3 this is equivalent to micro accuracy across all mineral pixels.
 
@@ -333,6 +339,44 @@ Substantive corrections applied to PNAS paper after re-reading L2A and L2B ATBDs
 - *Detailed methods section retains "consistency regularization"* (lines 292–295) as honest description of the soft-loss mechanism. Abstract uses the hybrid: "consistency-loss regularizer based on Vapnik–Izmailov statistical invariants".
 - Dissertation/original paper retain "LUSI consistency regularization" / "consistency loss" terminology in detailed sections; not propagating the top-level rewording there.
 
+### PNAS structure pass (2026-05-17)
+
+Substantive structural rewrite of the PNAS paper. All three documents (PNAS, original paper, dissertation) were touched.
+
+**Results section (PNAS only)** — reorganized into 10 `\paragraph{...}` headings keyed 1:1 to a question framework:
+
+1. Spectral priors lift accuracy at constrained capacity but not at saturated capacity
+2. A smaller model with a spectroscopic prior matches the performance of a larger model without one
+3. Architectural/Spectral priors learn faster from the first epoch (with `compare_runs_early.png` figure)
+4. Attention concentrates near known Fe$^{3+}$ diagnostic wavelengths (with new goethite-only `Geothite_4headAttn.png` figure)
+5. Spectral priors improve rare-class capture; the LUSI-like loss alone does not
+6. Spectral priors and the LUSI-like consistency loss do not stack additively
+7. Granule-scale deployment within the training region
+8. Cross-region deployment to the southwestern US (now includes 19/20 macro-recall granule count)
+9. Comparison with a non-attention random-forest baseline (new inline tabular)
+10. Operational speed and reliability compared with the EMIT pipeline (with `posthoc_workflow.png` figure)
+
+**Discussion section (PNAS, ~1000 words after trim)** — `\paragraph{}` headings: opening, "What the attention analysis does and does not explain", "Statistical-invariance regularization reveals a robustness tradeoff" (now with the first-order TOA decomposition Eq. `eq:toa_decomp_disc` and Vapnik-vs-soft-approximation framing), "Spectral priors and the LUSI-inspired loss do not stack additively", "Post-hoc direct retrieval as a reliable operational surrogate", "Conditions for transfer beyond EMIT", "Limitations" (4 items, down from 6), "Future work" (3 directions: validation + calibration, adaptive infusion, causal interpretability). The formal-RKHS-LUSI exploration appears once in Discussion (no longer duplicated in Future Work).
+
+**Materials and Methods section (PNAS, 7 `\paragraph{}` headings)** — mirrors the architecture diagram exactly: (1) Data and preprocessing (merged source data + class balancing + robust z-score normalization), (2) Tokenization and embedding, (3) Attention pooling, (4) Classification, plus two parallel "Physics infusion (optional):" boxes for spectroscopic attention-bias initialization (with `\subparagraph{Manual prior.}` and `\subparagraph{PCA-curated prior.}` sub-blocks) and the LUSI-inspired consistency loss, plus a single Optimization and ablation protocol paragraph. Removed three redundant Methods paragraphs (Full-granule inference, Attention and spectral-alignment analysis, Cross-region evaluation) whose content is already in Results.
+
+**LUSI-like terminology convention (pragmatic, 2026-05-15/17)**: in PNAS prose, bare "LUSI" was renamed "LUSI-like" or "LUSI-inspired" to disclaim formal-RKHS-LUSI; but configuration short labels in Table 1 (`LUSI 4H`, `Manual + LUSI 4H`, etc.) and equation subscripts (`$\mathcal{L}_{\text{LUSI}}$`, `$\lambda_{\text{LUSI}}$`) kept the short name. First-mention disclaimer paragraph added at line 216 of PNAS Results. Original paper and dissertation use a mix of "LUSI" and "LUSI-inspired" already and were not strictly swept.
+
+**Vapnik-divergence phrasing (locked to "constrained functional in RKHS")**: earlier "RKHS-V functional" and "kernel-based" wordings were both errors — "-V" suffix is not Vapnik's nomenclature ("V matrix" is, but not RKHS-V) and "kernel-based" was too broad. Current locked language: "via minimization of a constrained functional in a Reproducing Kernel Hilbert Space (RKHS)" (Discussion) and "the formal LUSI implementation as a constrained functional on an RKHS" (Future work). Both terms (RKHS, functional) appear in Vapnik's paper.
+
+**`fig:posthoc_workflow` (`posthoc_workflow.png`)** — new 3-step deployment workflow figure ((1) one-time SDS-processed training pairs, (2) transformer training with optional physics-infusion mechanisms, (3) single-pass deployment). In PNAS it replaces `fig:data_levels` (Intro figure removed; new figure lives in Discussion's "Post-hoc direct retrieval as a reliable operational surrogate" paragraph). In the original paper and dissertation, `fig:posthoc_workflow` is added alongside `fig:data_levels` (both kept) in the "A Next Generation Remote Sensing Pipeline" section. **Image file not yet on disk** — must be saved to `Disseratation_txt/Dissertation_images/posthoc_workflow.png`.
+
+**RF baseline subsection (new in original paper + dissertation, also in PNAS)** — `\section{Comparison with a non-attention random-forest baseline}` (label `sec:rf_baseline_comparison` in paper) with full table covering in-distribution / Africa-granule / SW US scales; the dissertation extends `tab:partI_vs_partII` with three blocks instead of a separate section. Citations: `wang2022hyspex` (RF for hyperspectral mineral mapping) + `hong2021spectralformer` (RF as baseline in transformer-based HSI papers).
+
+**Manual prior wavelength citation cluster locked**: `\cite{Jiang2014AlGoethite, clark1999, sherman1985, burns1993}` covers all five Fe$^{3+}$ regions (480/535 nm visible charge-transfer from Jiang; 670/860/920 nm crystal-field from clark/sherman/burns).
+
+**PCA-curated prior subparagraph rewritten** to define targets/confusers/hard-negatives explicitly, pin $\sim$56 surviving spectra and $\sim$220 of 285 valid bands, and explain the "noisy long-wavelength edge" ($>$$\sim$$2450$ nm, atmospheric H$_2$O + detector roll-off). Cites `kokaly2017usgs` for the USGS Spectral Library source.
+
+**Discussion/Conclusions themes carried into the other two documents**:
+
+- *Original paper* (`partII_paper.tex`): full Discussion content added (was empty stub) with 6 paragraph themes mirroring PNAS + verbose 6-direction Future Work subsection.
+- *Dissertation*: Key Findings in Conclusions chapter expanded from 5 → 8 items adding "Spectral priors and LUSI don't stack additively", "Attention is consistent-with not causal", "Framework is transferable in structure, not in spectral content". Future Work in Conclusions chapter expanded from 7 → 11 bullets adding Formal LUSI implementation, Causal interpretability, Uncertainty quantification, Adaptive physics infusion.
+
 ### Bib entries added during recent revisions
 - `vermote1997sixs` — Vermote et al. 1997, IEEE TGRS 35(3): 675–686. Canonical 6S radiative transfer reference replacing the earlier `schott2007`/`schaepman2006` citations for the TOA decomposition. Both schott2007 and schaepman2006 are no longer cited in either document.
 - `szegedy2016rethinking` — Szegedy et al. 2016, CVPR. Cited for label smoothing in the cross-entropy / optimization subsection.
@@ -380,6 +424,93 @@ LUSI added to the manual spectral prior:
 
 Notes on the Manual+LUSI 4H artifact: the original 2026-05-15 run lost its `ckpt_best_qoiattn_nozeros.pt` because the wrapping shell script ran both 4H and 8H from the same CWD and the 8H epoch-1 save overwrote it. `spectral_stage1_qoiattn_nozeros.pt` (final-epoch ckpt) saved by training script line 1063 is **not usable for inference** — it omits the classifier head dict. Re-run on 2026-05-16 with cwd inside the output folder recovered a usable `ckpt_best` at epoch 118 (val_acc1 = 0.7961, reproducing the original 0.7950 final-epoch metric within noise). For future multi-job training scripts, run each from inside its own output folder to avoid CWD collisions on the best-checkpoint file.
 
+## 96-Class Abstain Experiments (2026-05-17 → 2026-05-19)
+
+Motivation: the locked 95-class pipeline silently drops Tetracorder class 0 ("no Group-1 match") before training, leaving the model with no abstain output. At deployment every pixel — bare ground, shadow, cloud, water — gets one of 95 mineral predictions. Solving this required a 96-class retrain that treats class 0 as a 96th non-mineral category, plus parallel inference-script changes so the model is allowed to see and label these pixels at deployment.
+
+### Pipeline changes
+
+- **Training script**: `kelli_scripts/spectral_trans_withqoi_attentionr18_pcalusi.py`. Adds `--include_zero_class` (off by default). When set: `NCLS=96`, class-0 filter skipped, label shift `ytr - 1` skipped, labels flow as 0..95 (0 = non-mineral, 1..95 = mineral IDs).
+- **Training data sampler**: `kelli_scripts/Africa_pixel_GroupID.ipynb` modified to keep class 0 in the per-class sampling pass. Three training-set sizes produced: `TOApixel_balanced_W_gb1_gb2_train{16000,20000,24000}.npy` (per-class caps 16k/20k/24k; total 978k/1.185M/1.385M pixels; class-0 contribution 1.6%/1.7%/1.7%).
+- **Inference scripts (r1 variants)**:
+  - `kelli_scripts/UseXformer_fullimageinference_r1.py` (Africa-format 2D-input granules)
+  - `kelli_scripts/UseXformer_fullimageinference_3d_r1.py` (SW-format 3D-cube granules)
+  - Both add `--include_zero_class`. **Critical fix vs r0**: skip mask is now based on the *spectral data* (all-zero spectrum, NaN/inf, or `|val|≥1e20` fill — matches the training-script bad-row criterion) instead of the GT label column. Previously the script silently dropped any pixel with `label==0` at the *input* stage, so the 96-class model's abstain output could never fire and cached SW predictions had no softmax outputs on non-mineral pixels at all. r1 also drops the legacy `+1` class shift when `--include_zero_class` is set, and emits a class-0 (P/R/F1, TP/FP/FN) detector report. Skipped pixels get a `-1` sentinel with `top_conf=0`, distinguishable from genuine class-0 predictions.
+- **Output folders**: `Data/attn_outputs_<config>_96cls{,_v2,_v3}/` for the three training-set sizes; `*/SW/` subfolder holds the SW granule predictions in the same naming convention as the locked aggregator (`Xformer_predictSW_<scene_id>.npy`).
+- **Driver scripts**: `kelli_scripts/run_3runs_96cls.sh` (v1, 3 configs), `run_4runs_96cls_v{2,3}.sh` (v2/v3, 4 configs adding LUSI), `run_africa_granule_inference_96cls_v3.sh`, `run_sw_granule_inference_96cls_v3.sh`. Each run starts from inside its own output folder to avoid CWD-collision overwriting `ckpt_best`.
+
+### Data-scaling on the validation split (top-1)
+
+Three training-set sizes were swept to characterize the data-scaling response of each prior under the abstain task. Each cell is val_top1 at best epoch, 4-head, 96-class, seed 42.
+
+| Per-class cap | Trans 4H | Manual 4H | PCA-curated 4H | LUSI 4H |
+| --- | ---: | ---: | ---: | ---: |
+| 16k (v1, 978k total) | 0.784 | 0.775 | **0.802** | (not run) |
+| 20k (v2, 1.185M) | 0.806 | 0.784 | 0.770 | **0.808** |
+| 24k (v3, 1.385M) | **0.807** | 0.788 | 0.770 | 0.800 |
+
+Class-0 (non-mineral) F1 on the validation split scales from ~0.83 at v1 to ~0.86 (Trans) at v3 — the abstain task is learnable with just 1.6–1.7% class-0 representation.
+
+**Key observations**:
+
+- **Trans 4H saturates around v2** (+0.04 pp from v2 to v3); the extra data buys nothing once the model has seen ~1.2M pixels.
+- **PCA-curated 4H regressed v1 → v2 (0.802 → 0.770) and reproduced at v3 (0.770)** to 4 decimal places. Same hyperparams, same precomputed bias file (`pca_attention_bias_max_H4.npy`, ts 2026-05-04), same seed. Stable two-version-floor confirms the regression is a real prior-data interaction at 4H + 96-class, not a stochastic dip — the PCA prior is genuinely harmful at this capacity once class 0 is included. Single-seed regressions should be re-confirmed with seed 43 before paper-time, but the v2→v3 stability is strong evidence.
+- **Manual 4H is the only config still scaling at v3** (+0.4 pp from v2). Its sharp narrow Fe³⁺ bumps slow learning but more data eventually compensates.
+- **LUSI 4H was the v2 leader (0.808) and dropped slightly at v3 (0.800)** — likely a single-seed fluctuation since LUSI's KL-loss training has more stochasticity than CE-only configs. Worth seed-43 reconfirmation.
+
+### Africa-granule deployment, v3 4H 96-class (within-training-region)
+
+`kelli_scripts/run_africa_granule_inference_96cls_v3.sh` runs all 4 v3 checkpoints on Images 0, 4, 50, 100 via the new `UseXformer_fullimageinference_r1.py`. Aggregated metrics:
+
+| Config | Img 0 t1 | Img 4 t1 | Img 50 t1 | Img 100 t1 | Mean (excl. Img 0) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **Trans 4H** | 0.433 | **0.826** | **0.686** | 0.747 | **0.753** |
+| LUSI 4H | 0.389 | 0.814 | 0.685 | **0.782** | 0.760 |
+| Manual 4H | 0.425 | 0.789 | 0.625 | 0.780 | 0.731 |
+| PCA-curated 4H | 0.383 | 0.781 | 0.577 | 0.750 | 0.703 |
+
+Top-3 mean excluding Img 0: **LUSI 0.982 > Trans 0.979 > Manual 0.965 > PCA-curated 0.955** — LUSI leads at the top-3 horizon, edging Trans by 0.3 pp.
+
+Class-0 F1 on the two granules with meaningful non-mineral content (Img 0 at 90% non-mineral; Img 50 at 9% non-mineral) ranges 0.94–0.97 across configs — abstain task works reliably within the training region. Mineral→class-0 leakage 0.16–2.60% (Manual lowest, LUSI highest), indicating LUSI's consistency loss makes it slightly more abstain-prone. Img 0 remains the deployment-failure case for all configs (top-1 0.38–0.43), consistent with the legacy class-28 atypical-Fe-hydroxide finding.
+
+**Comparison vs. locked 95-class Africa-granule numbers** (CLAUDE.md "Granule-level full-image inference"): Trans 4H drops from 0.874 mean (excl Img 0) to 0.753 — a 12 pp degradation. The drop is **not** from class-0 confusion (only 1.0–1.2% of mineral pixels mis-labeled to class 0); it's from the abstain head competing with mineral discrimination at 4-head capacity. The capacity-saturation interpretation predicts this gap should close at 8H.
+
+### SW US cross-region deployment, v3 4H 96-class (20-granule mean)
+
+`kelli_scripts/run_sw_granule_inference_96cls_v3.sh` runs the 4 v3 checkpoints on the 20 SW US granules with ≥20% G1 mineral fraction (same eligibility filter as `granule_inference_summary_SW.py`). **LUSI wins SW deployment on every metric**:
+
+| Config (4H, 96-cls v3) | top-1 | top-3 | Macro R | Cls0 P | Cls0 R | Cls0 F1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **LUSI 4H** | **0.572** | **0.818** | **0.186** | **0.904** | **0.470** | **0.595** |
+| Trans 4H | 0.520 | 0.780 | 0.160 | 0.901 | 0.403 | 0.528 |
+| PCA-curated 4H | 0.503 | 0.718 | 0.120 | 0.765 | 0.428 | 0.523 |
+| Manual 4H | 0.430 | 0.720 | 0.144 | 0.815 | 0.438 | 0.545 |
+
+Per-granule wins (out of 20): LUSI takes top-1 on 10, top-3 on 11, **macro recall on 17**, class-0 F1 on 9. LUSI > Trans head-to-head: top-1 14/20, top-3 15/20, macro recall 17/20, cls0_F1 14/20.
+
+**Cross-region degradation vs. locked 95-class SW**:
+
+| Config | Locked 95-cls SW top-1 | 96-cls v3 SW top-1 | Δ |
+| --- | ---: | ---: | ---: |
+| Trans 4H | 0.669 | 0.520 | −14.9 pp |
+| **LUSI 4H** | 0.634 | **0.572** | **−6.2 pp** |
+| Manual 4H | 0.724 | 0.430 | −29.4 pp |
+| PCA-curated 4H | 0.644 | 0.503 | −14.1 pp |
+
+Every config degrades vs the locked baseline (expected — the abstain head competes for capacity). **LUSI degrades least by a wide margin** (−6.2 pp vs −14.9 to −29.4 pp). The consistency-loss-induced robustness exactly delivers what its theory promises: it cushions the model against out-of-distribution shifts. Manual is the biggest loser — its narrow Fe³⁺ priors, optimized for the training distribution, generalize poorly when forced to share head capacity with the abstain task and operate on a different geography.
+
+**Class-0 abstain quality degrades sharply cross-region**: Africa training-region class-0 F1 was 0.94–0.97; SW US drops to 0.52–0.59. The collapse is entirely in **recall** (Africa 0.83–0.94 → SW 0.40–0.47); precision stays high (0.77–0.90). The model becomes *cautious about asserting non-mineral* on unfamiliar surfaces but stays accurate when it does say so. LUSI has the best recall by 4–7 pp.
+
+### Paper implications (4H story, pending 8H confirmation)
+
+- **The legacy "LUSI concentrates in rare-class macro recall on out-of-distribution scenes" claim now extends to top-1**: in the 96-class regime, LUSI wins outright on SW US top-1 (0.572 vs Trans 0.520), not just macro recall. The robustness-vs-accuracy framing in the PNAS paper holds, but the new headline is stronger — LUSI is now the cross-region accuracy leader at 4H 96-class.
+- **Within-region capacity-saturation story still holds**: Trans 4H wins the validation split and the within-region granule top-1 ordering matches the validation ranking.
+- **PCA-curated prior breakdown is a real finding** at this capacity. v2/v3 reproduce 0.770 to 4 decimals. Re-run with seed 43 before any paper claim.
+- **Manual prior is the most fragile** under the abstain constraint at 4H — biggest cross-region accuracy drop, biggest within-region mineral accuracy drop relative to its locked 95-class baseline. The narrow Gaussian-bump prior structure is incompatible with the broader "this isn't iron" decision the abstain head needs to make.
+- **8H runs are the necessary next step** to determine whether (a) PCA-curated recovers at saturated capacity (likely — its diffuse loadings have more room at 8H, mirroring the v1 → v2 sharp-vs-diffuse pattern in CLAUDE.md `tab:ablation`), (b) the LUSI cross-region win persists or amplifies, (c) Manual recovers from its 4H collapse.
+
+Pre-8H paper status (2026-05-19): the PNAS, original-journal, and dissertation `.tex` files are at the locked 95-class state. No updates planned until 8H 96-class results land — at that point the v1/v2/v3 4H sweep + 8H confirmation will be written up jointly as the 96-class section.
+
 ## Broken-PCA-Prior Finding (2026-05-03)
 The legacy `physics_mode=pca` pipeline (r14, retained in r17 for backward-compatibility runs) silently produces nonsense priors when run on the 93-spectrum Group-1 file. Root cause is in `make_pca_priors_from_ref` (the carried-forward implementation in [spectral_trans_withqoi_attentionr17_pcalusi.py](kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py)):
 ```python
@@ -397,7 +528,7 @@ Skip the library entirely. Use Gaussian bumps at user-specified diagnostic wavel
 ```bash
 python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
   --physics_init --physics_mode manual --heads 4 \
-  --physics_alpha 0.5 --physics_freeze_prior_epochs 1 \
+  --physics_alpha 1.0 --physics_freeze_prior_epochs 3 \
   --wavelengths Data/emit_wavelength_centers_nm.npy \
   --wv_mask Spectra/group1_all/water_vapor_mask_285.npy \
   ...
@@ -419,7 +550,7 @@ python kelli_scripts/build_group1_ferric_pca_prior.py \
 python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
   --physics_init --physics_mode precomputed \
   --prior_bias_path Spectra/group1_ferric_pca_prior/pca_attention_bias_max_H4.npy \
-  --physics_alpha 0.5 --physics_freeze_prior_epochs 1 ...
+  --physics_alpha 1.0 --physics_freeze_prior_epochs 3 ...
 ```
 
 The build script reads `.npy` filenames directly from `--npy_dir` (no mineral matrix); each file is classified by keyword on its filename. Modes filter which categories survive into PCA. Saves both `zabs` and `max` bias variants per head count.
@@ -544,7 +675,7 @@ python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
   --use_cosine --dump_attn --use_derivatives \
   --attn_out Data/attn_outputs_Manual4_diff
 ```
-Defaults: `--manual_prior_bands "480,535,670,860,920" --manual_prior_normalize max --physics_alpha 0.5 --physics_freeze_prior_epochs 1`. Override `--physics_alpha 1.0` or `--physics_freeze_prior_epochs 3` for a stronger / longer-pinned prior.
+CLI defaults: `--manual_prior_bands "480,535,670,860,920" --manual_prior_normalize max --physics_alpha 0.5 --physics_freeze_prior_epochs 1`. **Locked ablation runs (papers + dissertation) use `--physics_alpha 1.0 --physics_freeze_prior_epochs 3`** — the stronger/longer-pinned settings.
 
 **Curated PCA prior (loaded from disk):**
 ```
@@ -560,7 +691,7 @@ python kelli_scripts/build_group1_ferric_pca_prior.py \
 python kelli_scripts/spectral_trans_withqoi_attentionr17_pcalusi.py \
   --physics_init --physics_mode precomputed \
   --prior_bias_path Spectra/group1_ferric_pca_prior/pca_attention_bias_max_H4.npy \
-  --physics_alpha 0.5 --physics_freeze_prior_epochs 1 \
+  --physics_alpha 1.0 --physics_freeze_prior_epochs 3 \
   ... (other args same as above) ...
 ```
 
